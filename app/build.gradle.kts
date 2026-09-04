@@ -1,3 +1,6 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.multiplatform")
@@ -61,29 +64,29 @@ kotlin {
     }
 }
 
+val dynamicVersionName = SimpleDateFormat("yyyy.MM.dd.HH.mm").format(Date())
+
 android {
-    namespace = "com.fookus.tube"
+    namespace = "islamic.video.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.fookus.tube"
+        applicationId = "islamic.video.app"
         minSdk = 24
         targetSdk = 34
         versionCode = 5
-        versionName = "1.5"
+        versionName = dynamicVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
     signingConfigs {
         create("release") {
-            val keystoreFile = project.rootProject.file("keys/fookus-tube-release.jks")
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias = System.getenv("KEY_ALIAS") ?: ""
-                keyPassword = System.getenv("KEY_PASSWORD") ?: ""
-            }
+            val keystoreFile = project.rootProject.file("keys/release.jks")
+            storeFile = keystoreFile
+            storePassword = "release123"
+            keyAlias = "release_key"
+            keyPassword = "release123"
         }
     }
 

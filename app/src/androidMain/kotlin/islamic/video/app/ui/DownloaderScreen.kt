@@ -1,0 +1,702 @@
+package islamic.video.app.ui
+
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
+import islamic.video.app.R
+import islamic.video.app.ui.theme.AppTheme
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material.icons.filled.Check
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DownloaderScreen(viewModel: DownloaderViewModel) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var playingUrl by remember { mutableStateOf<String?>(null) }
+    var channelUrl by remember { mutableStateOf<String?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
+
+    if (channelUrl != null) {
+        ChannelScreen(
+            url = channelUrl!!,
+            onBack = { channelUrl = null },
+            onVideoSelected = { url ->
+                playingUrl = url
+                channelUrl = null
+            }
+        )
+        return
+    }
+
+    if (playingUrl != null) {
+        PlayerScreen(
+            url = playingUrl!!,
+            viewModel = viewModel,
+            onBack = { playingUrl = null },
+            onDownload = { _ ->
+                playingUrl = null
+            },
+            onChannelSelected = { url ->
+                channelUrl = url
+            }
+        )
+        return
+    }
+
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
+
+    val navigationContent: @Composable () -> Unit = {
+        if (isTablet) {
+            NavigationRail(
+                containerColor = Color.Transparent
+            ) {
+                Spacer(Modifier.weight(1f))
+                NavigationRailItem(
+                    selected = selectedTab == 0 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        viewModel.activeFilter.value = "Search"
+                        selectedTab = 0
+                    },
+                    icon = {
+                        Crossfade(targetState = selectedTab == 0 && !showSettings, label = "home_icon") { isSelected ->
+                            if (isSelected) {
+                                Icon(Icons.Filled.Home, contentDescription = "Home")
+                            } else {
+                                Icon(Icons.Outlined.Home, contentDescription = "Home")
+                            }
+                        }
+                    },
+                    label = { Text("Home") }
+                )
+                NavigationRailItem(
+                    selected = selectedTab == 1 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        selectedTab = 1
+                    },
+                    icon = {
+                        Image(
+                            painter = painterResource(R.drawable.ic_amau_logo),
+                            contentDescription = "AMAU",
+                            modifier = Modifier.size(24.dp).clip(CircleShape)
+                        )
+                    },
+                    label = { Text("AMAU") }
+                )
+                NavigationRailItem(
+                    selected = selectedTab == 2 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        selectedTab = 2
+                    },
+                    icon = {
+                        Image(
+                            painter = painterResource(R.drawable.ic_amar_logo),
+                            contentDescription = "AMAR",
+                            modifier = Modifier.size(24.dp).clip(CircleShape)
+                        )
+                    },
+                    label = { Text("AMAR") }
+                )
+                NavigationRailItem(
+                    selected = selectedTab == 3 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        viewModel.activeFilter.value = "Offline"
+                        selectedTab = 3
+                    },
+                    icon = {
+                        if (selectedTab == 3 && !showSettings) {
+                            Icon(Icons.Filled.Download, contentDescription = "Downloads")
+                        } else {
+                            Icon(Icons.Outlined.Download, contentDescription = "Downloads")
+                        }
+                    },
+                    label = { Text("Downloads") }
+                )
+                Spacer(Modifier.weight(1f))
+            }
+        } else {
+            NavigationBar(
+                containerColor = Color.Transparent,
+                tonalElevation = 0.dp
+            ) {
+                NavigationBarItem(
+                    selected = selectedTab == 0 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        viewModel.activeFilter.value = "Search"
+                        selectedTab = 0
+                    },
+                    icon = {
+                        Crossfade(targetState = selectedTab == 0 && !showSettings, label = "home_icon") { isSelected ->
+                            if (isSelected) {
+                                Icon(Icons.Filled.Home, contentDescription = "Home")
+                            } else {
+                                Icon(Icons.Outlined.Home, contentDescription = "Home")
+                            }
+                        }
+                    },
+                    label = { Text("Home") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 1 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        selectedTab = 1
+                    },
+                    icon = {
+                        Image(
+                            painter = painterResource(R.drawable.ic_amau_logo),
+                            contentDescription = "AMAU",
+                            modifier = Modifier.size(24.dp).clip(CircleShape)
+                        )
+                    },
+                    label = { Text("AMAU") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        selectedTab = 2
+                    },
+                    icon = {
+                        Image(
+                            painter = painterResource(R.drawable.ic_amar_logo),
+                            contentDescription = "AMAR",
+                            modifier = Modifier.size(24.dp).clip(CircleShape)
+                        )
+                    },
+                    label = { Text("AMAR") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        viewModel.activeFilter.value = "Offline"
+                        selectedTab = 3
+                    },
+                    icon = {
+                        if (selectedTab == 3 && !showSettings) {
+                            Icon(Icons.Filled.Download, contentDescription = "Downloads")
+                        } else {
+                            Icon(Icons.Outlined.Download, contentDescription = "Downloads")
+                        }
+                    },
+                    label = { Text("Downloads") }
+                )
+            }
+        }
+    }
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (isTablet) {
+            navigationContent()
+        }
+
+        Scaffold(
+            modifier = Modifier.weight(1f),
+            bottomBar = {
+                if (!isTablet) {
+                    navigationContent()
+                }
+            }
+        ) { innerPadding ->
+            if (showSettings) {
+                BackHandler {
+                    showSettings = false
+                }
+            } else if (selectedTab != 0) {
+                BackHandler {
+                    selectedTab = 0
+                }
+            }
+
+            val screenMargin = if (isTablet) (configuration.screenWidthDp * 0.20f).dp else 0.dp
+
+            Box(modifier = Modifier.fillMaxSize().padding(horizontal = screenMargin)) {
+                if (showSettings) {
+                    SettingsTab(viewModel, innerPadding)
+                } else {
+                    AnimatedContent(targetState = selectedTab, label = "tab_transition") { targetTab ->
+                        when (targetTab) {
+                            0 -> NewPipeTab(
+                                viewModel = viewModel,
+                                contentPadding = innerPadding,
+                                onUrlSelected = { url -> playingUrl = url },
+                                onOpenSettings = { showSettings = true }
+                            )
+                            1 -> ChannelScreen(
+                                url = "https://www.youtube.com/channel/UCmTqZ28TaM7V_g7uJVuBAMw",
+                                onBack = null,
+                                onVideoSelected = { url -> playingUrl = url }
+                            )
+                            2 -> ChannelScreen(
+                                url = "https://www.youtube.com/channel/UCHC1c8i5RMDE-2GhNBCQeVw",
+                                onBack = null,
+                                onVideoSelected = { url -> playingUrl = url }
+                            )
+                            3 -> {
+                                LaunchedEffect(Unit) {
+                                    viewModel.activeFilter.value = "Offline"
+                                }
+                                NewPipeTab(
+                                    viewModel = viewModel,
+                                    contentPadding = innerPadding,
+                                    onUrlSelected = { url -> playingUrl = url },
+                                    onOpenSettings = { showSettings = true }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.animation.ExperimentalAnimationApi::class)
+@Composable
+fun SettingsTab(viewModel: DownloaderViewModel, contentPadding: PaddingValues = PaddingValues(0.dp)) {
+    var currentScreen by remember { mutableStateOf("Main") }
+
+    BackHandler(enabled = currentScreen != "Main") {
+        currentScreen = "Main"
+    }
+
+    AnimatedContent(
+        targetState = currentScreen,
+        transitionSpec = {
+            if (targetState != "Main") {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                ) togetherWith slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            } else {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                ) togetherWith slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        },
+        label = "settings_transition"
+    ) { screen ->
+        when (screen) {
+            "Main" -> SettingsMainList(onNavigate = { currentScreen = it }, contentPadding = contentPadding)
+            "Customisation" -> CustomisationScreen(viewModel, onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
+            "Sources" -> SourcesScreen(viewModel, onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
+            "About" -> AboutScreen(onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
+            "Story" -> StoryScreen(onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
+        }
+    }
+}
+
+@Composable
+fun SettingsListItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconColor: androidx.compose.ui.graphics.Color,
+    title: String,
+    subtitle: String,
+    topRadius: androidx.compose.ui.unit.Dp = 0.dp,
+    bottomRadius: androidx.compose.ui.unit.Dp = 0.dp,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (isPressed) 0.95f else 1f)
+    val currentTop by androidx.compose.animation.core.animateDpAsState(if (isPressed) 24.dp else topRadius)
+    val currentBottom by androidx.compose.animation.core.animateDpAsState(if (isPressed) 24.dp else bottomRadius)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(
+                topStart = currentTop, topEnd = currentTop,
+                bottomStart = currentBottom, bottomEnd = currentBottom
+            ))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .clickable(
+                interactionSource = interactionSource, 
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(iconColor, shape = CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = Color.White)
+        }
+        Spacer(Modifier.width(20.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsMainList(onNavigate: (String) -> Unit, contentPadding: PaddingValues) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "Settings",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 16.dp)
+        )
+        
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            SettingsListItem(
+                icon = Icons.Default.Palette,
+                iconColor = Color(0xFF88637B),
+                title = "Customisation",
+                subtitle = "Themes, App Appearance, Terminal",
+                topRadius = 24.dp,
+                onClick = { onNavigate("Customisation") }
+            )
+            SettingsListItem(
+                icon = Icons.Default.Search,
+                iconColor = Color(0xFF00758F),
+                title = "Sources",
+                subtitle = "Search engines like YouTube, PeerTube",
+                onClick = { onNavigate("Sources") }
+            )
+            SettingsListItem(
+                icon = Icons.Default.Info,
+                iconColor = Color(0xFF4C6B8B),
+                title = "About",
+                subtitle = "Developer info, GitHub, Support",
+                onClick = { onNavigate("About") }
+            )
+            SettingsListItem(
+                icon = Icons.Default.Book,
+                iconColor = Color(0xFF7A4F5C),
+                title = "Story",
+                subtitle = "The journey of this app",
+                onClick = { onNavigate("Story") }
+            )
+            
+            val packageInfo = remember {
+                try {
+                    context.packageManager.getPackageInfo(context.packageName, 0)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            val versionName = packageInfo?.versionName ?: "Unknown"
+
+            SettingsListItem(
+                icon = Icons.Default.Info,
+                iconColor = Color(0xFF6B8B4C),
+                title = "App Info",
+                subtitle = "Version $versionName",
+                bottomRadius = 24.dp,
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Hotaro26/fookus-tube"))
+                    context.startActivity(intent)
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun CustomisationScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, contentPadding: PaddingValues) {
+    val themeMode = viewModel.themeMode.intValue
+    val selectedTheme = viewModel.selectedTheme.value
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 16.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+            Spacer(Modifier.width(8.dp))
+            Text("Customisation", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        
+        Card {
+            Column(Modifier.padding(16.dp)) {
+                Text("Theme Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = themeMode == 0, onClick = { viewModel.setThemeMode(0) }, label = { Text("System") })
+                    FilterChip(selected = themeMode == 1, onClick = { viewModel.setThemeMode(1) }, label = { Text("Light") })
+                    FilterChip(selected = themeMode == 2, onClick = { viewModel.setThemeMode(2) }, label = { Text("Dark") })
+                }
+            }
+        }
+
+        Card {
+            Column(Modifier.padding(16.dp)) {
+                Text("App Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AppTheme.values().forEach { theme ->
+                        FilterChip(
+                            selected = selectedTheme == theme,
+                            onClick = { viewModel.setAppTheme(theme) },
+                            label = { Text(theme.name) }
+                        )
+                    }
+                }
+            }
+        }
+
+        Card {
+            Column(Modifier.padding(16.dp)) {
+                Text("Terminal Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TerminalTheme.values().forEach { theme ->
+                        FilterChip(
+                            selected = viewModel.terminalTheme.value == theme,
+                            onClick = { viewModel.updateTerminalTheme(theme) },
+                            label = { Text(theme.displayName) },
+                            leadingIcon = if (viewModel.terminalTheme.value == theme) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SourcesScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, contentPadding: PaddingValues) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 16.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+            Spacer(Modifier.width(8.dp))
+            Text("Sources", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        
+        Card {
+            Column(Modifier.padding(16.dp)) {
+                Text("Search Engine", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = viewModel.searchSource.value == "YouTube", onClick = { viewModel.searchSource.value = "YouTube" }, label = { Text("YouTube") })
+                    FilterChip(selected = viewModel.searchSource.value == "PeerTube", onClick = { viewModel.searchSource.value = "PeerTube" }, label = { Text("PeerTube") })
+                    FilterChip(selected = viewModel.searchSource.value == "SoundCloud", onClick = { viewModel.searchSource.value = "SoundCloud" }, label = { Text("SoundCloud") })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
+    val context = LocalContext.current
+    var showDiscordPopup by remember { mutableStateOf(false) }
+    val upiId = "9693703723@fam"
+
+    if (showDiscordPopup) {
+        AlertDialog(
+            onDismissRequest = { showDiscordPopup = false },
+            title = { Text("Discord Details") },
+            text = {
+                Column {
+                    Text("Discord: oi.hotaro")
+                    Text("Alt ID: flawed_manago")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDiscordPopup = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 16.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+            Spacer(Modifier.width(8.dp))
+            Text("About", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("About Developer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text("Hotaro", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        Text("Passionate Android developer and open-source enthusiast.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(modifier = Modifier.alpha(0.3f))
+                Spacer(Modifier.height(16.dp))
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth()) {
+                    IconButton(onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Hotaro26"))
+                        context.startActivity(intent)
+                    }) {
+                        Icon(painterResource(R.drawable.ic_github), contentDescription = "GitHub", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { showDiscordPopup = true }) {
+                        Icon(painterResource(R.drawable.ic_discord), contentDescription = "Discord", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://pinterest.com/hotaro344"))
+                        context.startActivity(intent)
+                    }) {
+                        Icon(painterResource(R.drawable.ic_pinterest), contentDescription = "Pinterest", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable {
+                val upiUrl = "upi://pay?pa=$upiId&pn=Donation&cu=INR"
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUrl))
+                try {
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "No UPI app found", Toast.LENGTH_SHORT).show()
+                }
+            },
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text("Support Us via UPI", fontWeight = FontWeight.Medium)
+                    Text(
+                        "Tap to donate",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StoryScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 16.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+            Spacer(Modifier.width(8.dp))
+            Text("Story", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        
+        Text(
+            "I used to open YouTube to watch educational lectures and study material, but the algorithm and endless Shorts would always get me hooked and distracted. Hours would pass by without any real work getting done.\n\nI built MadrasaTube to eliminate those distractions. It's designed to keep you focused on what you actually intended to watch, and allows you to easily save those important lectures for offline viewing when there's no Wi-Fi.\n\nMadrasaTube is your tool to take back control of your time.",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
