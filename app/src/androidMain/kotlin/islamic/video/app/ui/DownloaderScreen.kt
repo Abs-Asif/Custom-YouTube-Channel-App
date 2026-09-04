@@ -1,8 +1,5 @@
 package islamic.video.app.ui
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -13,7 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.animation.core.tween
@@ -21,12 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import islamic.video.app.R
 import islamic.video.app.ui.theme.AppTheme
@@ -36,9 +31,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.School
 
 @Composable
 fun CustomNavItem(
@@ -51,14 +45,14 @@ fun CustomNavItem(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
             modifier = Modifier
                 .height(32.dp)
-                .width(56.dp)
+                .width(48.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
             contentAlignment = Alignment.Center
@@ -73,445 +67,8 @@ fun CustomNavItem(
         CompositionLocalProvider(
             LocalContentColor provides if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
         ) {
-            ProvideTextStyle(value = MaterialTheme.typography.labelMedium.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)) {
+            ProvideTextStyle(value = MaterialTheme.typography.labelSmall.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)) {
                 label()
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun OfflineScreen(
-    viewModel: DownloaderViewModel,
-    contentPadding: PaddingValues,
-    onVideoSelected: (String) -> Unit
-) {
-    val downloadedList by viewModel.offline
-    var videoToDelete by remember { mutableStateOf<islamic.video.app.model.SavedVideo?>(null) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding)
-            .padding(horizontal = 16.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Offline Videos",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        if (downloadedList.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No downloaded videos yet.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            androidx.compose.foundation.lazy.LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(downloadedList.size, key = { downloadedList[it].url }) { index ->
-                    val item = downloadedList[index]
-                    val dismissState = androidx.compose.material3.rememberSwipeToDismissBoxState(
-                        confirmValueChange = {
-                            if (it == androidx.compose.material3.SwipeToDismissBoxValue.EndToStart || it == androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd) {
-                                videoToDelete = item
-                                false
-                            } else false
-                        }
-                    )
-
-                    androidx.compose.material3.SwipeToDismissBox(
-                        state = dismissState,
-                        backgroundContent = {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.errorContainer)
-                                    .padding(horizontal = 20.dp),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
-                        }
-                    ) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.addToHistory(item)
-                                    onVideoSelected(item.url)
-                                },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(modifier = Modifier.size(100.dp, 60.dp)) {
-                                    coil.compose.AsyncImage(
-                                        model = item.localThumbUri ?: item.thumbUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                    )
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = item.title,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        maxLines = 2,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = item.uploader,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                IconButton(onClick = { videoToDelete = item }) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "Delete",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (videoToDelete != null) {
-        val video = videoToDelete!!
-        AlertDialog(
-            onDismissRequest = { videoToDelete = null },
-            title = { Text("Delete Video") },
-            text = { Text("Are you sure you want to remove '${video.title}' from downloaded videos?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.removeFromOffline(video)
-                    videoToDelete = null
-                }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { videoToDelete = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DownloadPageScreen(
-    viewModel: DownloaderViewModel,
-    contentPadding: PaddingValues,
-    onBack: () -> Unit
-) {
-    val context = LocalContext.current
-    var qualityExpanded by remember { mutableStateOf(false) }
-    var modeExpanded by remember { mutableStateOf(false) }
-    var currentQuality by remember { mutableStateOf("720p") }
-    var currentFormat by remember { mutableStateOf("video") }
-
-    val preview by remember { viewModel.previewMetadata }
-
-    LaunchedEffect(viewModel.offlineUrl.value) {
-        if (viewModel.offlineUrl.value.isNotBlank() && viewModel.offlineUrl.value.startsWith("http")) {
-            kotlinx.coroutines.delay(500)
-            viewModel.fetchPreview(viewModel.offlineUrl.value)
-        } else {
-            viewModel.previewMetadata.value = null
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding)
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(vertical = 16.dp)
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Download Video",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        OutlinedTextField(
-            value = viewModel.offlineUrl.value,
-            onValueChange = { viewModel.offlineUrl.value = it },
-            placeholder = { Text("Paste YouTube URL here") },
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            trailingIcon = {
-                Row {
-                    if (viewModel.offlineUrl.value.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.offlineUrl.value = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
-                        }
-                    }
-                    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-                    IconButton(onClick = {
-                        clipboardManager.getText()?.let {
-                            viewModel.offlineUrl.value = it.text
-                        }
-                    }) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste")
-                    }
-                }
-            },
-            shape = MaterialTheme.shapes.large
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ExposedDropdownMenuBox(
-                expanded = qualityExpanded,
-                onExpandedChange = { qualityExpanded = it },
-                modifier = Modifier.weight(1f)
-            ) {
-                OutlinedTextField(
-                    value = currentQuality,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Quality") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = qualityExpanded) },
-                    modifier = Modifier.menuAnchor(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                ExposedDropdownMenu(
-                    expanded = qualityExpanded,
-                    onDismissRequest = { qualityExpanded = false }
-                ) {
-                    val options = if (currentFormat == "audio") {
-                        listOf("Medium", "High", "Best")
-                    } else {
-                        val avQuals = preview?.availableQualities
-                        if (!avQuals.isNullOrEmpty()) {
-                            avQuals
-                        } else {
-                            listOf("360p", "720p", "1080p")
-                        }
-                    }
-                    options.forEach { selectionOption ->
-                        DropdownMenuItem(
-                            text = { Text(selectionOption) },
-                            onClick = {
-                                currentQuality = selectionOption
-                                qualityExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            ExposedDropdownMenuBox(
-                expanded = modeExpanded,
-                onExpandedChange = { modeExpanded = it },
-                modifier = Modifier.weight(1f)
-            ) {
-                OutlinedTextField(
-                    value = currentFormat,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Format") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modeExpanded) },
-                    modifier = Modifier.menuAnchor(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                ExposedDropdownMenu(
-                    expanded = modeExpanded,
-                    onDismissRequest = { modeExpanded = false }
-                ) {
-                    listOf("video", "audio").forEach { selectionOption ->
-                        DropdownMenuItem(
-                            text = { Text(selectionOption) },
-                            onClick = {
-                                currentFormat = selectionOption
-                                modeExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        preview?.let { meta ->
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (meta.thumbUrl.isNotEmpty()) {
-                        coil.compose.AsyncImage(
-                            model = meta.thumbUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(80.dp, 48.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
-                        Spacer(Modifier.width(12.dp))
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = meta.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = meta.author,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (viewModel.activeDownloads.contains(viewModel.offlineUrl.value)) {
-                        IconButton(onClick = { viewModel.cancelDownload(viewModel.offlineUrl.value) }) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel Download", tint = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            }
-        }
-
-        val isDownloading = viewModel.activeDownloads.contains(viewModel.offlineUrl.value)
-        Button(
-            onClick = {
-                if (!isDownloading && viewModel.offlineUrl.value.isNotBlank()) {
-                    val title = preview?.title ?: "Manual Download"
-                    val author = preview?.author ?: "Unknown"
-                    val thumb = preview?.thumbUrl ?: ""
-                    val savedItem = islamic.video.app.model.SavedVideo(viewModel.offlineUrl.value, title, author, thumb)
-                    viewModel.startMockDownload(savedItem, currentQuality, currentFormat, context)
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp).padding(bottom = 16.dp),
-            shape = RoundedCornerShape(16.dp),
-            enabled = !isDownloading
-        ) {
-            if (isDownloading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    strokeWidth = 2.dp
-                )
-                Spacer(Modifier.width(12.dp))
-                Text("Downloading...")
-            } else {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Download")
-            }
-        }
-
-        val currentTerminalTheme = viewModel.terminalTheme.value
-        val consoleLogs = viewModel.consoleLogs
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(240.dp)
-                .padding(bottom = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(currentTerminalTheme.background)),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(currentTerminalTheme.header)),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(currentTerminalTheme.header))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(Modifier.size(8.dp).background(Color(0xFFFF5F56), CircleShape))
-                        Box(Modifier.size(8.dp).background(Color(0xFFFFBD2E), CircleShape))
-                        Box(Modifier.size(8.dp).background(Color(0xFF27C93F), CircleShape))
-                    }
-                    Text(
-                        text = "fookus@tube: ~",
-                        color = Color(currentTerminalTheme.text).copy(alpha = 0.6f),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    )
-                    IconButton(
-                        onClick = { viewModel.clearConsole() },
-                        modifier = Modifier.size(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Clear Console",
-                            tint = Color(currentTerminalTheme.text).copy(alpha = 0.6f),
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-                HorizontalDivider(color = Color(currentTerminalTheme.header), thickness = 1.dp)
-                val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-                LaunchedEffect(consoleLogs.size) {
-                    if (consoleLogs.isNotEmpty()) {
-                        lazyListState.animateScrollToItem(consoleLogs.size - 1)
-                    }
-                }
-                androidx.compose.foundation.lazy.LazyColumn(
-                    state = lazyListState,
-                    modifier = Modifier.fillMaxSize().padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(consoleLogs.size) { idx ->
-                        Text(
-                            text = consoleLogs[idx],
-                            color = Color(currentTerminalTheme.text),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            lineHeight = 14.sp
-                        )
-                    }
-                }
             }
         }
     }
@@ -524,7 +81,6 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
     var playingUrl by remember { mutableStateOf<String?>(null) }
     var channelUrl by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
-    var showDownloadPage by remember { mutableStateOf(false) }
 
     if (channelUrl != null) {
         ChannelScreen(
@@ -543,10 +99,6 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             url = playingUrl!!,
             viewModel = viewModel,
             onBack = { playingUrl = null },
-            onDownload = { _ ->
-                playingUrl = null
-                showDownloadPage = true
-            },
             onChannelSelected = { url ->
                 channelUrl = url
             }
@@ -564,15 +116,14 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             ) {
                 Spacer(Modifier.weight(1f))
                 NavigationRailItem(
-                    selected = selectedTab == 0 && !showSettings && !showDownloadPage,
+                    selected = selectedTab == 0 && !showSettings,
                     onClick = {
                         showSettings = false
-                        showDownloadPage = false
                         viewModel.activeFilter.value = "Search"
                         selectedTab = 0
                     },
                     icon = {
-                        if (selectedTab == 0 && !showSettings && !showDownloadPage) {
+                        if (selectedTab == 0 && !showSettings) {
                             Icon(Icons.Filled.Home, contentDescription = "Home")
                         } else {
                             Icon(Icons.Outlined.Home, contentDescription = "Home")
@@ -581,10 +132,9 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     label = { Text("Home") }
                 )
                 NavigationRailItem(
-                    selected = selectedTab == 1 && !showSettings && !showDownloadPage,
+                    selected = selectedTab == 1 && !showSettings,
                     onClick = {
                         showSettings = false
-                        showDownloadPage = false
                         selectedTab = 1
                     },
                     icon = {
@@ -597,10 +147,9 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     label = { Text("AMAU") }
                 )
                 NavigationRailItem(
-                    selected = selectedTab == 2 && !showSettings && !showDownloadPage,
+                    selected = selectedTab == 2 && !showSettings,
                     onClick = {
                         showSettings = false
-                        showDownloadPage = false
                         selectedTab = 2
                     },
                     icon = {
@@ -613,20 +162,34 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     label = { Text("AMAR") }
                 )
                 NavigationRailItem(
-                    selected = selectedTab == 3 && !showSettings && !showDownloadPage,
+                    selected = selectedTab == 3 && !showSettings,
                     onClick = {
                         showSettings = false
-                        showDownloadPage = false
                         selectedTab = 3
                     },
                     icon = {
-                        if (selectedTab == 3 && !showSettings && !showDownloadPage) {
-                            Icon(Icons.Filled.Download, contentDescription = "Offline")
+                        if (selectedTab == 3 && !showSettings) {
+                            Icon(Icons.Filled.Translate, contentDescription = "Arabic 101")
                         } else {
-                            Icon(Icons.Outlined.Download, contentDescription = "Offline")
+                            Icon(Icons.Outlined.Translate, contentDescription = "Arabic 101")
                         }
                     },
-                    label = { Text("Offline") }
+                    label = { Text("Arabic 101") }
+                )
+                NavigationRailItem(
+                    selected = selectedTab == 4 && !showSettings,
+                    onClick = {
+                        showSettings = false
+                        selectedTab = 4
+                    },
+                    icon = {
+                        if (selectedTab == 4 && !showSettings) {
+                            Icon(Icons.Filled.School, contentDescription = "ilman Nafiya")
+                        } else {
+                            Icon(Icons.Outlined.School, contentDescription = "ilman Nafiya")
+                        }
+                    },
+                    label = { Text("ilman Nafiya") }
                 )
                 Spacer(Modifier.weight(1f))
             }
@@ -645,15 +208,14 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CustomNavItem(
-                        selected = selectedTab == 0 && !showSettings && !showDownloadPage,
+                        selected = selectedTab == 0 && !showSettings,
                         onClick = {
                             showSettings = false
-                            showDownloadPage = false
                             viewModel.activeFilter.value = "Search"
                             selectedTab = 0
                         },
                         icon = {
-                            if (selectedTab == 0 && !showSettings && !showDownloadPage) {
+                            if (selectedTab == 0 && !showSettings) {
                                 Icon(Icons.Filled.Home, contentDescription = "Home")
                             } else {
                                 Icon(Icons.Outlined.Home, contentDescription = "Home")
@@ -662,10 +224,9 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         label = { Text("Home") }
                     )
                     CustomNavItem(
-                        selected = selectedTab == 1 && !showSettings && !showDownloadPage,
+                        selected = selectedTab == 1 && !showSettings,
                         onClick = {
                             showSettings = false
-                            showDownloadPage = false
                             selectedTab = 1
                         },
                         icon = {
@@ -678,10 +239,9 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         label = { Text("AMAU") }
                     )
                     CustomNavItem(
-                        selected = selectedTab == 2 && !showSettings && !showDownloadPage,
+                        selected = selectedTab == 2 && !showSettings,
                         onClick = {
                             showSettings = false
-                            showDownloadPage = false
                             selectedTab = 2
                         },
                         icon = {
@@ -694,20 +254,34 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         label = { Text("AMAR") }
                     )
                     CustomNavItem(
-                        selected = selectedTab == 3 && !showSettings && !showDownloadPage,
+                        selected = selectedTab == 3 && !showSettings,
                         onClick = {
                             showSettings = false
-                            showDownloadPage = false
                             selectedTab = 3
                         },
                         icon = {
-                            if (selectedTab == 3 && !showSettings && !showDownloadPage) {
-                                Icon(Icons.Filled.Download, contentDescription = "Offline")
+                            if (selectedTab == 3 && !showSettings) {
+                                Icon(Icons.Filled.Translate, contentDescription = "Arabic 101")
                             } else {
-                                Icon(Icons.Outlined.Download, contentDescription = "Offline")
+                                Icon(Icons.Outlined.Translate, contentDescription = "Arabic 101")
                             }
                         },
-                        label = { Text("Offline") }
+                        label = { Text("Arabic 101") }
+                    )
+                    CustomNavItem(
+                        selected = selectedTab == 4 && !showSettings,
+                        onClick = {
+                            showSettings = false
+                            selectedTab = 4
+                        },
+                        icon = {
+                            if (selectedTab == 4 && !showSettings) {
+                                Icon(Icons.Filled.School, contentDescription = "ilman Nafiya")
+                            } else {
+                                Icon(Icons.Outlined.School, contentDescription = "ilman Nafiya")
+                            }
+                        },
+                        label = { Text("ilman Nafiya") }
                     )
                 }
             }
@@ -742,13 +316,6 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             Box(modifier = Modifier.fillMaxSize().padding(horizontal = screenMargin)) {
                 if (showSettings) {
                     SettingsTab(viewModel, innerPadding)
-                } else if (showDownloadPage) {
-                    BackHandler { showDownloadPage = false }
-                    DownloadPageScreen(
-                        viewModel = viewModel,
-                        contentPadding = innerPadding,
-                        onBack = { showDownloadPage = false }
-                    )
                 } else {
                     AnimatedContent(targetState = selectedTab, label = "tab_transition") { targetTab ->
                         when (targetTab) {
@@ -756,8 +323,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                                 viewModel = viewModel,
                                 contentPadding = innerPadding,
                                 onUrlSelected = { url -> playingUrl = url },
-                                onOpenSettings = { showSettings = true },
-                                onOpenDownloadPage = { showDownloadPage = true }
+                                onOpenSettings = { showSettings = true }
                             )
                             1 -> ChannelScreen(
                                 url = "https://www.youtube.com/channel/UCmTqZ28TaM7V_g7uJVuBAMw",
@@ -769,10 +335,15 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                                 onBack = null,
                                 onVideoSelected = { url, _, _ -> playingUrl = url }
                             )
-                            3 -> OfflineScreen(
-                                viewModel = viewModel,
-                                contentPadding = innerPadding,
-                                onVideoSelected = { url -> playingUrl = url }
+                            3 -> ChannelScreen(
+                                url = "https://www.youtube.com/channel/UCEcQu_9GNDiGU_vqjVZXj3Q",
+                                onBack = null,
+                                onVideoSelected = { url, _, _ -> playingUrl = url }
+                            )
+                            4 -> ChannelScreen(
+                                url = "https://www.youtube.com/channel/UCvKlSNZ58rTQ0xrWT1jrqFg",
+                                onBack = null,
+                                onVideoSelected = { url, _, _ -> playingUrl = url }
                             )
                         }
                     }
@@ -879,7 +450,7 @@ fun SettingsListItem(
 
 @Composable
 fun SettingsMainList(onNavigate: (String) -> Unit, contentPadding: PaddingValues) {
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -903,7 +474,7 @@ fun SettingsMainList(onNavigate: (String) -> Unit, contentPadding: PaddingValues
                 icon = Icons.Default.Palette,
                 iconColor = Color(0xFF88637B),
                 title = "Customisation",
-                subtitle = "Themes, App Appearance, Terminal",
+                subtitle = "Themes & App Appearance",
                 topRadius = 24.dp,
                 onClick = { onNavigate("Customisation") }
             )
@@ -922,7 +493,7 @@ fun SettingsMainList(onNavigate: (String) -> Unit, contentPadding: PaddingValues
                     null
                 }
             }
-            val versionName = packageInfo?.versionName ?: "Unknown"
+            val versionName = packageInfo?.versionName ?: "1.0.0"
 
             SettingsListItem(
                 icon = Icons.Default.Info,
@@ -936,7 +507,7 @@ fun SettingsMainList(onNavigate: (String) -> Unit, contentPadding: PaddingValues
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomisationScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, contentPadding: PaddingValues) {
     val themeMode = viewModel.themeMode.intValue
@@ -985,32 +556,8 @@ fun CustomisationScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, cont
                 }
             }
         }
-
-        Card {
-            Column(Modifier.padding(16.dp)) {
-                Text("Terminal Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TerminalTheme.values().forEach { theme ->
-                        FilterChip(
-                            selected = viewModel.terminalTheme.value == theme,
-                            onClick = { viewModel.updateTerminalTheme(theme) },
-                            label = { Text(theme.displayName) },
-                            leadingIcon = if (viewModel.terminalTheme.value == theme) {
-                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
-                            } else null
-                        )
-                    }
-                }
-            }
-        }
     }
 }
-
 
 @Composable
 fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
@@ -1116,7 +663,7 @@ fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "A distraction-free, ad-free Islamic video learning app designed to facilitate focused study and offline access to beneficial lectures.",
+                    text = "A distraction-free, ad-free Islamic video learning app designed to facilitate focused study.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

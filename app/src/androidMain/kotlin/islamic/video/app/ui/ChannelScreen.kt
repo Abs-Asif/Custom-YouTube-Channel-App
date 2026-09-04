@@ -10,6 +10,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +34,7 @@ import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.concurrent.ConcurrentHashMap
+import java.util.Locale
 
 object ChannelCache {
     data class ChannelData(
@@ -46,9 +50,31 @@ object ChannelCache {
 
     fun getChannel(url: String): ChannelData? = channelDataMap[url]
     fun putChannel(url: String, data: ChannelData) { channelDataMap[url] = data }
+    fun clearChannel(url: String) { channelDataMap.remove(url) }
 
     fun getPlaylistVideos(url: String): List<StreamInfoItem>? = playlistVideosMap[url]
     fun putPlaylistVideos(url: String, videos: List<StreamInfoItem>) { playlistVideosMap[url] = videos }
+    fun clearPlaylistVideos(url: String) { playlistVideosMap.remove(url) }
+}
+
+fun formatSubscriberCount(countStr: String): String {
+    val count = countStr.toLongOrNull() ?: return countStr
+    if (count <= 0) return ""
+    return when {
+        count >= 1_000_000_000 -> {
+            val v = count / 1_000_000_000.0
+            if (v % 1.0 == 0.0) "${v.toLong()}B" else String.format(Locale.US, "%.1fB", v)
+        }
+        count >= 1_000_000 -> {
+            val v = count / 1_000_000.0
+            if (v % 1.0 == 0.0) "${v.toLong()}M" else String.format(Locale.US, "%.1fM", v)
+        }
+        count >= 1_000 -> {
+            val v = count / 1_000.0
+            if (v % 1.0 == 0.0) "${v.toLong()}K" else String.format(Locale.US, "%.1fK", v)
+        }
+        else -> count.toString()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,39 +112,53 @@ fun ChannelScreen(
         }
     }
 
-    LaunchedEffect(url) {
-        val cached = ChannelCache.getChannel(url)
-        if (cached != null) {
-            channelName = cached.name
-            channelAvatar = cached.avatarUrl
-            subscriberCount = cached.subscriberCount
-            videos = cached.videos
-            playlists = cached.playlists
-            isLoading = false
-            return@LaunchedEffect
+    val fetchChannelData: suspend (Boolean) -> Unit = { forceRefresh ->
+        if (forceRefresh) {
+            ChannelCache.clearChannel(url)
+        } else {
+            val cached = ChannelCache.getChannel(url)
+            if (cached != null) {
+                channelName = cached.name
+                channelAvatar = cached.avatarUrl
+                subscriberCount = cached.subscriberCount
+                videos = cached.videos
+                playlists = cached.playlists
+                isLoading = false
+            }
         }
 
-        scope.launch(Dispatchers.IO) {
+        if (forceRefresh || ChannelCache.getChannel(url) == null) {
             try {
                 val channelInfo = ChannelInfo.getInfo(url)
                 val tabs = channelInfo.tabs
 
                 var fetchedVideos = emptyList<StreamInfoItem>()
-                var fetchedPlaylists = emptyList<PlaylistInfoItem>()
+                var fetchedPlaylists = mutableListOf<PlaylistInfoItem>()
 
                 // Fetch videos tab
-                val videoTabLink = tabs.firstOrNull { it.id.lowercase().contains("video") } ?: tabs.firstOrNull()
+                val videoTabLink = tabs.firstOrNull {
+                    val id = try { it.id } catch(e: Exception) { "" }
+                    val tabUrl = try { it.url } catch(e: Exception) { "" }
+                    id.lowercase().contains("video") || tabUrl.lowercase().contains("video")
+                } ?: tabs.firstOrNull()
+
                 if (videoTabLink != null) {
-                    val tabInfo = ChannelTabInfo.getInfo(ServiceList.YouTube, videoTabLink)
-                    fetchedVideos = tabInfo.relatedItems.filterIsInstance<StreamInfoItem>()
+                    try {
+                        val tabInfo = ChannelTabInfo.getInfo(ServiceList.YouTube, videoTabLink)
+                        fetchedVideos = tabInfo.relatedItems.filterIsInstance<StreamInfoItem>()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
 
-                // Fetch playlists tab if available
-                val playlistTabLink = tabs.firstOrNull { it.id.lowercase().contains("playlist") }
-                if (playlistTabLink != null) {
+                // Fetch playlists across tabs
+                for (tab in tabs) {
                     try {
-                        val plTabInfo = ChannelTabInfo.getInfo(ServiceList.YouTube, playlistTabLink)
-                        fetchedPlaylists = plTabInfo.relatedItems.filterIsInstance<PlaylistInfoItem>()
+                        val tabInfo = ChannelTabInfo.getInfo(ServiceList.YouTube, tab)
+                        val items = tabInfo.relatedItems.filterIsInstance<PlaylistInfoItem>()
+                        if (items.isNotEmpty()) {
+                            fetchedPlaylists.addAll(items)
+                        }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -150,15 +190,25 @@ fun ChannelScreen(
         }
     }
 
-    fun loadPlaylist(plUrl: String, plName: String) {
+    LaunchedEffect(url) {
+        scope.launch(Dispatchers.IO) {
+            fetchChannelData(false)
+        }
+    }
+
+    fun loadPlaylist(plUrl: String, plName: String, forceRefresh: Boolean = false) {
         activePlaylistUrl = plUrl
         activePlaylistName = plName
 
-        val cachedPlVideos = ChannelCache.getPlaylistVideos(plUrl)
-        if (cachedPlVideos != null) {
-            playlistVideos = cachedPlVideos
-            isPlaylistVideosLoading = false
-            return
+        if (forceRefresh) {
+            ChannelCache.clearPlaylistVideos(plUrl)
+        } else {
+            val cachedPlVideos = ChannelCache.getPlaylistVideos(plUrl)
+            if (cachedPlVideos != null) {
+                playlistVideos = cachedPlVideos
+                isPlaylistVideosLoading = false
+                return
+            }
         }
 
         isPlaylistVideosLoading = true
@@ -177,6 +227,18 @@ fun ChannelScreen(
                     isPlaylistVideosLoading = false
                 }
             }
+        }
+    }
+
+    val pullToRefreshState = rememberPullToRefreshState()
+    if (pullToRefreshState.isRefreshing) {
+        LaunchedEffect(true) {
+            if (activePlaylistUrl != null) {
+                loadPlaylist(activePlaylistUrl!!, activePlaylistName ?: "", forceRefresh = true)
+            } else {
+                fetchChannelData(true)
+            }
+            pullToRefreshState.endRefresh()
         }
     }
 
@@ -204,131 +266,140 @@ fun ChannelScreen(
             }
         }
     ) { padding ->
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (activePlaylistUrl != null) {
-            if (isPlaylistVideosLoading) {
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .nestedScroll(pullToRefreshState.nestedScrollConnection)
+        ) {
+            if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else {
-                val plUrls = remember(playlistVideos) { playlistVideos.map { it.url } }
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 320.dp),
-                    modifier = Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(playlistVideos.size) { index ->
-                        val item = playlistVideos[index]
-                        YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url, plUrls, index) })
+            } else if (activePlaylistUrl != null) {
+                if (isPlaylistVideosLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
                     }
-                }
-            }
-        } else {
-            Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-                // Channel Info Header (No banner image)
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (channelAvatar != null) {
-                        AsyncImage(
-                            model = channelAvatar,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.size(64.dp).clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(Modifier.width(16.dp))
-                    }
-                    Column {
-                        Text(channelName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        if (subscriberCount.isNotBlank() && subscriberCount != "-1") {
-                            Text("$subscriberCount subscribers", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-
-                // Inner Tabs: Videos & Playlists
-                TabRow(selectedTabIndex = selectedInnerTab) {
-                    Tab(
-                        selected = selectedInnerTab == 0,
-                        onClick = { selectedInnerTab = 0 },
-                        text = { Text("Videos") }
-                    )
-                    Tab(
-                        selected = selectedInnerTab == 1,
-                        onClick = { selectedInnerTab = 1 },
-                        text = { Text("Playlists") }
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                if (selectedInnerTab == 0) {
-                    val videoUrls = remember(videos) { videos.map { it.url } }
+                } else {
+                    val plUrls = remember(playlistVideos) { playlistVideos.map { it.url } }
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 320.dp),
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(videos.size) { index ->
-                            val item = videos[index]
-                            YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url, videoUrls, index) })
+                        items(playlistVideos.size) { index ->
+                            val item = playlistVideos[index]
+                            YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url, plUrls, index) })
                         }
                     }
-                } else {
-                    if (playlists.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No playlists found", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Channel Info Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (channelAvatar != null) {
+                            AsyncImage(
+                                model = channelAvatar,
+                                contentDescription = "Avatar",
+                                modifier = Modifier.size(64.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(Modifier.width(16.dp))
                         }
-                    } else {
+                        Column {
+                            Text(channelName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            val formattedSub = formatSubscriberCount(subscriberCount)
+                            if (formattedSub.isNotBlank() && formattedSub != "-1") {
+                                Text("$formattedSub subscribers", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    // Inner Tabs: Videos & Playlists
+                    TabRow(selectedTabIndex = selectedInnerTab) {
+                        Tab(
+                            selected = selectedInnerTab == 0,
+                            onClick = { selectedInnerTab = 0 },
+                            text = { Text("Videos") }
+                        )
+                        Tab(
+                            selected = selectedInnerTab == 1,
+                            onClick = { selectedInnerTab = 1 },
+                            text = { Text("Playlists") }
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (selectedInnerTab == 0) {
+                        val videoUrls = remember(videos) { videos.map { it.url } }
                         LazyVerticalGrid(
                             columns = GridCells.Adaptive(minSize = 320.dp),
                             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(playlists) { item ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().clickable { loadPlaylist(item.url, item.name) },
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(8.dp)) {
-                                        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                                            AsyncImage(
-                                                model = item.thumbnails?.firstOrNull()?.url ?: "",
-                                                contentDescription = null,
-                                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                            if (item.streamCount > 0) {
-                                                Surface(
-                                                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                                                    color = Color.Black.copy(alpha = 0.8f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "${item.streamCount} videos",
-                                                        color = Color.White,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
+                            items(videos.size) { index ->
+                                val item = videos[index]
+                                YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url, videoUrls, index) })
+                            }
+                        }
+                    } else {
+                        if (playlists.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("No playlists found", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 320.dp),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(playlists) { item ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().clickable { loadPlaylist(item.url, item.name) },
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Column {
+                                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                                                AsyncImage(
+                                                    model = item.thumbnails?.firstOrNull()?.url ?: "",
+                                                    contentDescription = null,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                if (item.streamCount > 0) {
+                                                    Surface(
+                                                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                                                        color = Color.Black.copy(alpha = 0.8f),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "${item.streamCount} videos",
+                                                            color = Color.White,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Text(
+                                                    text = item.name,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
                                         }
-                                        Spacer(Modifier.height(8.dp))
-                                        Text(
-                                            text = item.name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
                                     }
                                 }
                             }
@@ -336,6 +407,11 @@ fun ChannelScreen(
                     }
                 }
             }
+
+            PullToRefreshContainer(
+                state = pullToRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
 }
@@ -347,12 +423,12 @@ fun YouTubeVideoCard(item: StreamInfoItem, onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 AsyncImage(
                     model = item.thumbnails?.firstOrNull()?.url ?: "",
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
                 if (item.duration > 0) {
@@ -373,14 +449,15 @@ fun YouTubeVideoCard(item: StreamInfoItem, onClick: () -> Unit) {
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
