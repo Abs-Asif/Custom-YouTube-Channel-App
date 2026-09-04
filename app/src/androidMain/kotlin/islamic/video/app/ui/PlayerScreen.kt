@@ -219,8 +219,7 @@ fun PlayerScreen(
                         ) {
                             IconButton(onClick = { 
                                 viewModel.offlineUrl.value = url
-                                viewModel.activeFilter.value = "Offline"
-                                onBack()
+                                onDownload(url)
                             }, modifier = Modifier.size(36.dp)) {
                                 Icon(Icons.Default.Download, "Download", tint = MaterialTheme.colorScheme.onPrimaryContainer)
                             }

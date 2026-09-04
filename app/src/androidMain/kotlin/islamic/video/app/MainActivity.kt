@@ -53,6 +53,18 @@ class MainActivity : ComponentActivity() {
             .components {
                 add(coil.decode.VideoFrameDecoder.Factory())
             }
+            .crossfade(true)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(100 * 1024 * 1024)
+                    .build()
+            }
             .build()
         coil.Coil.setImageLoader(imageLoader)
 
@@ -63,18 +75,6 @@ class MainActivity : ComponentActivity() {
             // Handle shared intent on start
             LaunchedEffect(intent) {
                 handleIntent(intent, viewModel)
-            }
-            
-            LaunchedEffect(Unit) {
-                try {
-                    val packageInfo = packageManager.getPackageInfo(packageName, 0)
-                    val versionName = packageInfo.versionName
-                    if (versionName != null) {
-                        UpdateChecker.check(this@MainActivity, versionName)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
             }
             val darkTheme = when (viewModel.themeMode.intValue) {
                 1 -> false

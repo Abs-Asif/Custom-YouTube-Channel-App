@@ -69,7 +69,8 @@ fun NewPipeTab(
     contentPadding: PaddingValues,
     onUrlSelected: (String) -> Unit,
     onChannelSelected: (String) -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenDownloadPage: () -> Unit = {}
 ) {
     var query by viewModel.newPipeQuery
     var results by viewModel.newPipeResults
@@ -132,11 +133,7 @@ fun NewPipeTab(
             searchJob?.cancel()
             searchJob = coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    val service = when (viewModel.searchSource.value) {
-                        "PeerTube" -> ServiceList.PeerTube
-                        "SoundCloud" -> ServiceList.SoundCloud
-                        else -> ServiceList.YouTube
-                    }
+                    val service = ServiceList.YouTube
                     val searchExtractor = service.getSearchExtractor(query)
                     searchExtractor.fetchPage()
                     val items = searchExtractor.initialPage.items.filterIsInstance<StreamInfoItem>()
@@ -772,7 +769,7 @@ fun NewPipeTab(
                     AnimatedFilterChip("History") { setSelectedFilter("History") }
                     AnimatedFilterChip("Offline") { setSelectedFilter("Offline") }
                     AnimatedFilterChip("Bookmarks") { setSelectedFilter("Bookmarks") }
-                    AnimatedFilterChip("Downloads") { showDownloadedScreen = true }
+                    AnimatedFilterChip("Downloads") { onOpenDownloadPage() }
                 }
             }
             
