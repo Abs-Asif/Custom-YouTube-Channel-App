@@ -83,6 +83,21 @@ android {
     signingConfigs {
         create("release") {
             val keystoreFile = project.rootProject.file("keys/release.jks")
+            if (!keystoreFile.exists()) {
+                keystoreFile.parentFile?.mkdirs()
+                val keytoolCmd = arrayOf(
+                    "keytool", "-genkey", "-v",
+                    "-keystore", keystoreFile.absolutePath,
+                    "-alias", "release_key",
+                    "-keyalg", "RSA",
+                    "-keysize", "2048",
+                    "-validity", "10000",
+                    "-storepass", "release123",
+                    "-keypass", "release123",
+                    "-dname", "CN=MadrasaTube, OU=Development, O=MadrasaTube, L=City, ST=State, C=US"
+                )
+                ProcessBuilder(*keytoolCmd).start().waitFor()
+            }
             storeFile = keystoreFile
             storePassword = "release123"
             keyAlias = "release_key"
