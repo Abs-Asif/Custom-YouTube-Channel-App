@@ -30,13 +30,33 @@ import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import java.util.concurrent.ConcurrentHashMap
+
+object ChannelCache {
+    data class ChannelData(
+        val name: String,
+        val avatarUrl: String?,
+        val subscriberCount: String,
+        val videos: List<StreamInfoItem>,
+        val playlists: List<PlaylistInfoItem>
+    )
+
+    private val channelDataMap = ConcurrentHashMap<String, ChannelData>()
+    private val playlistVideosMap = ConcurrentHashMap<String, List<StreamInfoItem>>()
+
+    fun getChannel(url: String): ChannelData? = channelDataMap[url]
+    fun putChannel(url: String, data: ChannelData) { channelDataMap[url] = data }
+
+    fun getPlaylistVideos(url: String): List<StreamInfoItem>? = playlistVideosMap[url]
+    fun putPlaylistVideos(url: String, videos: List<StreamInfoItem>) { playlistVideosMap[url] = videos }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChannelScreen(
     url: String,
     onBack: (() -> Unit)? = null,
-    onVideoSelected: (String) -> Unit
+    onVideoSelected: (String, List<String>, Int) -> Unit
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var channelName by remember { mutableStateOf("") }
@@ -67,16 +87,30 @@ fun ChannelScreen(
     }
 
     LaunchedEffect(url) {
+        val cached = ChannelCache.getChannel(url)
+        if (cached != null) {
+            channelName = cached.name
+            channelAvatar = cached.avatarUrl
+            subscriberCount = cached.subscriberCount
+            videos = cached.videos
+            playlists = cached.playlists
+            isLoading = false
+            return@LaunchedEffect
+        }
+
         scope.launch(Dispatchers.IO) {
             try {
                 val channelInfo = ChannelInfo.getInfo(url)
                 val tabs = channelInfo.tabs
 
+                var fetchedVideos = emptyList<StreamInfoItem>()
+                var fetchedPlaylists = emptyList<PlaylistInfoItem>()
+
                 // Fetch videos tab
                 val videoTabLink = tabs.firstOrNull { it.id.lowercase().contains("video") } ?: tabs.firstOrNull()
                 if (videoTabLink != null) {
                     val tabInfo = ChannelTabInfo.getInfo(ServiceList.YouTube, videoTabLink)
-                    videos = tabInfo.relatedItems.filterIsInstance<StreamInfoItem>()
+                    fetchedVideos = tabInfo.relatedItems.filterIsInstance<StreamInfoItem>()
                 }
 
                 // Fetch playlists tab if available
@@ -84,16 +118,27 @@ fun ChannelScreen(
                 if (playlistTabLink != null) {
                     try {
                         val plTabInfo = ChannelTabInfo.getInfo(ServiceList.YouTube, playlistTabLink)
-                        playlists = plTabInfo.relatedItems.filterIsInstance<PlaylistInfoItem>()
+                        fetchedPlaylists = plTabInfo.relatedItems.filterIsInstance<PlaylistInfoItem>()
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
 
+                val cName = channelInfo.name ?: "Channel"
+                val cAvatar = channelInfo.avatars?.firstOrNull()?.url
+                val cSubCount = channelInfo.subscriberCount.toString()
+
+                ChannelCache.putChannel(
+                    url,
+                    ChannelCache.ChannelData(cName, cAvatar, cSubCount, fetchedVideos, fetchedPlaylists)
+                )
+
                 withContext(Dispatchers.Main) {
-                    channelName = channelInfo.name
-                    channelAvatar = channelInfo.avatars?.firstOrNull()?.url
-                    subscriberCount = channelInfo.subscriberCount.toString()
+                    channelName = cName
+                    channelAvatar = cAvatar
+                    subscriberCount = cSubCount
+                    videos = fetchedVideos
+                    playlists = fetchedPlaylists
                     isLoading = false
                 }
             } catch (e: Exception) {
@@ -108,11 +153,20 @@ fun ChannelScreen(
     fun loadPlaylist(plUrl: String, plName: String) {
         activePlaylistUrl = plUrl
         activePlaylistName = plName
+
+        val cachedPlVideos = ChannelCache.getPlaylistVideos(plUrl)
+        if (cachedPlVideos != null) {
+            playlistVideos = cachedPlVideos
+            isPlaylistVideosLoading = false
+            return
+        }
+
         isPlaylistVideosLoading = true
         scope.launch(Dispatchers.IO) {
             try {
                 val plInfo = PlaylistInfo.getInfo(plUrl)
                 val items = plInfo.relatedItems.filterIsInstance<StreamInfoItem>()
+                ChannelCache.putPlaylistVideos(plUrl, items)
                 withContext(Dispatchers.Main) {
                     playlistVideos = items
                     isPlaylistVideosLoading = false
@@ -128,20 +182,26 @@ fun ChannelScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(activePlaylistName ?: channelName.ifEmpty { "Channel" }) },
-                navigationIcon = {
-                    if (activePlaylistUrl != null) {
-                        IconButton(onClick = { activePlaylistUrl = null }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Channel")
+            if (activePlaylistUrl != null || onBack != null) {
+                TopAppBar(
+                    title = {
+                        if (activePlaylistName != null) {
+                            Text(activePlaylistName!!)
                         }
-                    } else if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    },
+                    navigationIcon = {
+                        if (activePlaylistUrl != null) {
+                            IconButton(onClick = { activePlaylistUrl = null }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Channel")
+                            }
+                        } else if (onBack != null) {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
                         }
                     }
-                }
-            )
+                )
+            }
         }
     ) { padding ->
         if (isLoading) {
@@ -154,14 +214,16 @@ fun ChannelScreen(
                     CircularProgressIndicator()
                 }
             } else {
+                val plUrls = remember(playlistVideos) { playlistVideos.map { it.url } }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 320.dp),
                     modifier = Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(playlistVideos) { item ->
-                        YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url) })
+                    items(playlistVideos.size) { index ->
+                        val item = playlistVideos[index]
+                        YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url, plUrls, index) })
                     }
                 }
             }
@@ -206,14 +268,16 @@ fun ChannelScreen(
                 Spacer(Modifier.height(12.dp))
 
                 if (selectedInnerTab == 0) {
+                    val videoUrls = remember(videos) { videos.map { it.url } }
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 320.dp),
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(videos) { item ->
-                            YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url) })
+                        items(videos.size) { index ->
+                            val item = videos[index]
+                            YouTubeVideoCard(item = item, onClick = { onVideoSelected(item.url, videoUrls, index) })
                         }
                     }
                 } else {
