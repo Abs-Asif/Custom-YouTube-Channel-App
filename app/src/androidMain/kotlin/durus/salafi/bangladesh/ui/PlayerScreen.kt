@@ -234,12 +234,20 @@ fun PlayerScreen(
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    val msg = if (!viewModel.isOnline() || e is java.net.UnknownHostException || e is java.io.IOException) {
+                    val rawMsg = e.message ?: ""
+                    val isNetError = !viewModel.isOnline() ||
+                        e is java.net.UnknownHostException ||
+                        e is java.io.IOException ||
+                        rawMsg.contains("googleapis", ignoreCase = true) ||
+                        rawMsg.contains("youtube", ignoreCase = true) ||
+                        rawMsg.contains("Unable to resolve host", ignoreCase = true) ||
+                        rawMsg.contains("Failed to connect", ignoreCase = true)
+
+                    errorMessage = if (isNetError) {
                         "You are offline. Please check your internet connection."
                     } else {
-                        e.message ?: "Failed to load video"
+                        rawMsg.ifBlank { "Failed to load video" }
                     }
-                    errorMessage = msg
                     isLoading = false
                 }
             }

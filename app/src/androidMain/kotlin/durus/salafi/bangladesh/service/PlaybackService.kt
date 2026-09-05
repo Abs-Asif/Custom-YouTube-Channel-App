@@ -98,9 +98,18 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
+        val sessionActivityIntent = android.content.Intent(this, durus.salafi.bangladesh.MainActivity::class.java)
+        val sessionActivityPendingIntent = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            sessionActivityIntent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .setCallback(sessionCallback)
             .setCustomLayout(listOf(rewindButton, forwardButton))
+            .setSessionActivity(sessionActivityPendingIntent)
             .build()
 
         mediaSession?.let { addSession(it) }
@@ -108,6 +117,13 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         return mediaSession
+    }
+
+    override fun onTaskRemoved(rootIntent: android.content.Intent?) {
+        val player = mediaSession?.player
+        if (player == null || !player.playWhenReady || player.mediaItemCount == 0 || player.playbackState == androidx.media3.common.Player.STATE_ENDED) {
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {
