@@ -4,9 +4,11 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -51,6 +53,121 @@ import durus.salafi.bangladesh.model.WatchRecord
 import durus.salafi.bangladesh.ui.theme.AppTheme
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
+data class VideoDownloadTarget(
+    val url: String,
+    val title: String,
+    val thumbnailUrl: String?
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VideoOptionBottomSheet(
+    target: VideoDownloadTarget,
+    viewModel: DownloaderViewModel,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+    val isDownloaded = viewModel.isDownloaded(target.url)
+    val activeDownloads by viewModel.activeDownloads
+    val progressState = activeDownloads[target.url]
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                if (!target.thumbnailUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = target.thumbnailUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+                text = target.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            if (progressState?.isDownloading == true) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    LinearProgressIndicator(
+                        progress = { progressState.progress },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = if (progressState.isPausedOffline) "Paused (Offline - Waiting for connection)"
+                               else progressState.errorMessage ?: "Downloading... ${(progressState.progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else if (isDownloaded) {
+                Button(
+                    onClick = {
+                        viewModel.deleteDownload(target.url)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Delete Downloaded Video")
+                }
+            } else {
+                Button(
+                    onClick = {
+                        viewModel.startDownload(target.url, target.title, target.thumbnailUrl)
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Download (720p)")
+                }
+            }
+
+            if (progressState?.errorMessage != null && !progressState.isDownloading) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = progressState.errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloaderScreen(viewModel: DownloaderViewModel) {
@@ -58,6 +175,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
     var playingState by remember { mutableStateOf<PlayingTarget?>(null) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
+    var videoDownloadTarget by remember { mutableStateOf<VideoDownloadTarget?>(null) }
 
     val homeGridState = rememberLazyGridState()
     val playlistGridStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.grid.LazyGridState>() }
@@ -109,6 +227,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
         PlaylistDetailScreen(
             playlistData = playlistData,
             watchRecords = watchRecords,
+            viewModel = viewModel,
             gridState = gridState,
             listState = listState,
             lastPlayedUrl = lastPlayedUrl,
@@ -116,16 +235,21 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             onVideoSelected = { videoUrl, urls, index ->
                 val video = playlistData?.videos?.getOrNull(index)
                 if (video != null) {
+                    val thumb = durus.salafi.bangladesh.util.getBestThumbnailUrl(video.thumbnails)
                     viewModel.addToHistory(
                         SavedVideo(
                             url = video.url,
                             title = video.name,
                             uploader = video.uploaderName ?: "",
-                            thumbUrl = video.thumbnails?.firstOrNull()?.url ?: ""
+                            thumbUrl = thumb ?: ""
                         )
                     )
                 }
                 playingState = PlayingTarget(videoUrl, urls, index)
+            },
+            onVideoLongClick = { item ->
+                val thumb = durus.salafi.bangladesh.util.getBestThumbnailUrl(item.thumbnails)
+                videoDownloadTarget = VideoDownloadTarget(item.url, item.name, thumb)
             }
         )
         return
@@ -159,33 +283,54 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             TopAppBar(
                 title = {
                     if (isSearchActive) {
-                        OutlinedTextField(
+                        TextField(
                             value = localQuery,
                             onValueChange = { localQuery = it },
-                            placeholder = { Text("Search...") },
+                            placeholder = { Text("Search...", style = MaterialTheme.typography.bodyLarge) },
                             singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge,
                             shape = CircleShape,
+                            colors = TextFieldDefaults.colors(
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            ),
                             leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = null)
+                                Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             },
                             trailingIcon = {
                                 IconButton(onClick = {
-                                    isSearchActive = false
-                                    localQuery = ""
+                                    if (localQuery.isNotEmpty()) {
+                                        localQuery = ""
+                                    } else {
+                                        isSearchActive = false
+                                    }
                                 }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Close Search")
+                                    Icon(Icons.Default.Close, contentDescription = "Clear Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
+                                .padding(end = 8.dp)
+                                .height(50.dp)
                                 .focusRequester(searchFocusRequester)
                         )
                     } else {
                         Text("Durūs", fontWeight = FontWeight.Bold)
                     }
                 },
-                navigationIcon = {},
+                navigationIcon = {
+                    if (isSearchActive) {
+                        IconButton(onClick = {
+                            isSearchActive = false
+                            localQuery = ""
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
                 actions = {
                     if (!isSearchActive) {
                         IconButton(onClick = { isSearchActive = true }) {
@@ -282,20 +427,25 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                             }
                             items(matchingVideosWithPlaylistName) { (item, playlistTitle) ->
                                 val record = watchRecords[item.url]
+                                val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(item.thumbnails)
                                 VideoCardWithRecord(
                                     item = item,
                                     playlistBadge = playlistTitle,
                                     watchRecord = record,
+                                    viewModel = viewModel,
                                     onClick = {
                                         viewModel.addToHistory(
                                             SavedVideo(
                                                 url = item.url,
                                                 title = item.name,
                                                 uploader = item.uploaderName ?: "",
-                                                thumbUrl = item.thumbnails?.firstOrNull()?.url ?: ""
+                                                thumbUrl = thumbUrl ?: ""
                                             )
                                         )
                                         playingState = PlayingTarget(item.url, listOf(item.url), 0)
+                                    },
+                                    onLongClick = {
+                                        videoDownloadTarget = VideoDownloadTarget(item.url, item.name, thumbUrl)
                                     }
                                 )
                             }
@@ -348,6 +498,14 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }
+    }
+
+    if (videoDownloadTarget != null) {
+        VideoOptionBottomSheet(
+            target = videoDownloadTarget!!,
+            viewModel = viewModel,
+            onDismiss = { videoDownloadTarget = null }
+        )
     }
 }
 
@@ -441,16 +599,65 @@ fun PlaylistTileCard(
     }
 }
 
+fun toBengaliDigits(number: Long): String {
+    val bengaliDigits = charArrayOf('০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯')
+    return number.toString().map { ch ->
+        if (ch in '0'..'9') bengaliDigits[ch - '0'] else ch
+    }.joinToString("")
+}
+
+fun formatPlaylistDuration(videos: List<StreamInfoItem>): String {
+    val totalSeconds = videos.sumOf { it.duration }
+    if (totalSeconds <= 0) return ""
+
+    val totalMinutes = totalSeconds / 60
+    val totalHours = totalMinutes / 60
+
+    return when {
+        totalHours > 744 -> {
+            val months = totalHours / 744
+            val remDays = (totalHours % 744) / 24
+            if (remDays > 0) {
+                "${toBengaliDigits(months)} মাস ${toBengaliDigits(remDays)} দিন"
+            } else {
+                "${toBengaliDigits(months)} মাস"
+            }
+        }
+        totalHours >= 24 -> {
+            val days = totalHours / 24
+            val remHours = totalHours % 24
+            if (remHours > 0) {
+                "${toBengaliDigits(days)} দিন ${toBengaliDigits(remHours)} ঘন্ট"
+            } else {
+                "${toBengaliDigits(days)} দিন"
+            }
+        }
+        else -> {
+            val hours = totalMinutes / 60
+            val remMinutes = totalMinutes % 60
+            if (hours > 0 && remMinutes > 0) {
+                "${toBengaliDigits(hours)} ঘন্ট ${toBengaliDigits(remMinutes)} মিনিট"
+            } else if (hours > 0) {
+                "${toBengaliDigits(hours)} ঘন্ট"
+            } else {
+                "${toBengaliDigits(remMinutes)} মিনিট"
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistDetailScreen(
     playlistData: PlaylistData?,
     watchRecords: Map<String, WatchRecord>,
+    viewModel: DownloaderViewModel,
     gridState: LazyGridState = rememberLazyGridState(),
     listState: LazyListState = rememberLazyListState(),
     lastPlayedUrl: String? = null,
     onBack: () -> Unit,
-    onVideoSelected: (String, List<String>, Int) -> Unit
+    onVideoSelected: (String, List<String>, Int) -> Unit,
+    onVideoLongClick: ((StreamInfoItem) -> Unit)? = null
 ) {
     val videos = playlistData?.videos ?: emptyList()
     val videoUrls = remember(videos) { videos.map { it.url } }
@@ -463,8 +670,8 @@ fun PlaylistDetailScreen(
                 title = {
                     Text(
                         playlistData?.title ?: "Playlist",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
                 },
                 navigationIcon = {
@@ -504,6 +711,13 @@ fun PlaylistDetailScreen(
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    val formattedDuration = remember(videos) { formatPlaylistDuration(videos) }
+                    val headerCountText = if (formattedDuration.isNotBlank()) {
+                        "${videos.size} Videos • $formattedDuration"
+                    } else {
+                        "${videos.size} Videos"
+                    }
+
                     // Header Bar with "Play All" Button
                     Row(
                         modifier = Modifier
@@ -513,7 +727,7 @@ fun PlaylistDetailScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "${videos.size} Videos",
+                            text = headerCountText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -549,7 +763,9 @@ fun PlaylistDetailScreen(
                                 VideoCardWithRecord(
                                     item = item,
                                     watchRecord = record,
-                                    onClick = { onVideoSelected(item.url, videoUrls, index) }
+                                    viewModel = viewModel,
+                                    onClick = { onVideoSelected(item.url, videoUrls, index) },
+                                    onLongClick = { onVideoLongClick?.invoke(item) }
                                 )
                             }
                         }
@@ -566,7 +782,9 @@ fun PlaylistDetailScreen(
                                 YouTubeStyleVideoItem(
                                     item = item,
                                     watchRecord = record,
-                                    onClick = { onVideoSelected(item.url, videoUrls, index) }
+                                    viewModel = viewModel,
+                                    onClick = { onVideoSelected(item.url, videoUrls, index) },
+                                    onLongClick = { onVideoLongClick?.invoke(item) }
                                 )
                             }
                         }
@@ -577,16 +795,22 @@ fun PlaylistDetailScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun YouTubeStyleVideoItem(
     item: StreamInfoItem,
     watchRecord: WatchRecord?,
-    onClick: () -> Unit
+    viewModel: DownloaderViewModel? = null,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(item.thumbnails)
@@ -596,6 +820,36 @@ fun YouTubeStyleVideoItem(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+
+            val isDownloaded = viewModel?.isDownloaded(item.url) == true
+            if (isDownloaded) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Downloaded",
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
 
             if (item.duration > 0) {
                 val minutes = item.duration / 60
@@ -653,24 +907,31 @@ fun YouTubeStyleVideoItem(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoCardWithRecord(
     item: StreamInfoItem,
     playlistBadge: String? = null,
     watchRecord: WatchRecord?,
-    onClick: () -> Unit
+    viewModel: DownloaderViewModel? = null,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                val bestThumb = durus.salafi.bangladesh.util.getBestThumbnailUrl(item.thumbnails)
                 AsyncImage(
-                    model = item.thumbnails?.firstOrNull()?.url ?: "",
+                    model = bestThumb ?: "",
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -1028,6 +1289,28 @@ fun AboutScreen(onBack: (() -> Unit)? = null, contentPadding: PaddingValues) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                            data = android.net.Uri.parse("https://wa.link/n7blpl")
+                        }
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Submit New playlists",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

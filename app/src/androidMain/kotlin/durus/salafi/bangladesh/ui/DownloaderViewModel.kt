@@ -23,6 +23,27 @@ import okhttp3.Request
 import durus.salafi.bangladesh.util.getBestThumbnailUrl
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.NewPipe
+import java.io.File
+import java.io.FileOutputStream
+
+@kotlinx.serialization.Serializable
+data class DownloadedVideoRecord(
+    val url: String,
+    val relativePath: String,
+    val title: String,
+    val thumbnailUrl: String? = null,
+    val downloadedAt: Long = System.currentTimeMillis()
+)
+
+data class DownloadProgressState(
+    val url: String,
+    val isDownloading: Boolean = false,
+    val progress: Float = 0f,
+    val attempts: Int = 0,
+    val isPausedOffline: Boolean = false,
+    val errorMessage: String? = null
+)
 
 @kotlinx.serialization.Serializable
 data class SimpleVideoItem(
@@ -78,10 +99,287 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     // Watch Records
     val watchRecords = mutableStateOf<Map<String, WatchRecord>>(emptyMap())
 
+    // Downloads
+    val downloadedVideos = mutableStateOf<Map<String, DownloadedVideoRecord>>(emptyMap())
+    val activeDownloads = mutableStateOf<Map<String, DownloadProgressState>>(emptyMap())
+    private val pendingRetryQueue = mutableSetOf<String>()
+
     init {
         loadHistoryAndBookmarks()
         loadWatchRecords()
+        loadDownloadedVideos()
         loadSourcesAndPlaylists()
+        observeNetworkChanges()
+    }
+
+    private fun loadDownloadedVideos() {
+        try {
+            val str = prefs.getString("downloaded_videos_map", null)
+            if (str != null) {
+                val map = Json.decodeFromString<Map<String, DownloadedVideoRecord>>(str)
+                // Filter out records whose files no longer exist
+                val downloadsDir = getDownloadsDir()
+                val validMap = map.filter { entry ->
+                    val file = File(downloadsDir, entry.value.relativePath)
+                    file.exists() && file.length() > 0
+                }
+                downloadedVideos.value = validMap
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun saveDownloadedVideos() {
+        try {
+            prefs.edit().putString("downloaded_videos_map", Json.encodeToString(downloadedVideos.value)).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun getDownloadsDir(): File {
+        val dir = File(getApplication<Application>().filesDir, "app_videos")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    fun getDownloadedFile(videoUrl: String): File? {
+        val record = downloadedVideos.value[videoUrl] ?: return null
+        val file = File(getDownloadsDir(), record.relativePath)
+        return if (file.exists() && file.length() > 0) file else null
+    }
+
+    fun isDownloaded(videoUrl: String): Boolean {
+        return getDownloadedFile(videoUrl) != null
+    }
+
+    fun deleteDownload(videoUrl: String) {
+        val record = downloadedVideos.value[videoUrl]
+        if (record != null) {
+            val file = File(getDownloadsDir(), record.relativePath)
+            if (file.exists()) {
+                file.delete()
+            }
+            val newMap = downloadedVideos.value.toMutableMap()
+            newMap.remove(videoUrl)
+            downloadedVideos.value = newMap
+            saveDownloadedVideos()
+        }
+    }
+
+    fun startDownload(videoUrl: String, title: String, thumbnailUrl: String?) {
+        if (isDownloaded(videoUrl)) return
+        val currentDownloads = activeDownloads.value.toMutableMap()
+        if (currentDownloads[videoUrl]?.isDownloading == true) return
+
+        currentDownloads[videoUrl] = DownloadProgressState(
+            url = videoUrl,
+            isDownloading = true,
+            progress = 0f,
+            attempts = 0,
+            isPausedOffline = !isOnline()
+        )
+        activeDownloads.value = currentDownloads
+
+        if (!isOnline()) {
+            pendingRetryQueue.add(videoUrl)
+            return
+        }
+
+        executeDownloadTask(videoUrl, title, thumbnailUrl, attempts = 0)
+    }
+
+    private fun executeDownloadTask(
+        videoUrl: String,
+        title: String,
+        thumbnailUrl: String?,
+        attempts: Int
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val maxRetries = 9
+            var currentAttempt = attempts
+
+            while (currentAttempt < maxRetries) {
+                if (!isOnline()) {
+                    withContext(Dispatchers.Main) {
+                        pendingRetryQueue.add(videoUrl)
+                        val map = activeDownloads.value.toMutableMap()
+                        map[videoUrl] = DownloadProgressState(
+                            url = videoUrl,
+                            isDownloading = true,
+                            progress = map[videoUrl]?.progress ?: 0f,
+                            attempts = currentAttempt,
+                            isPausedOffline = true,
+                            errorMessage = "Paused (Offline)"
+                        )
+                        activeDownloads.value = map
+                    }
+                    return@launch
+                }
+
+                currentAttempt++
+                withContext(Dispatchers.Main) {
+                    val map = activeDownloads.value.toMutableMap()
+                    map[videoUrl] = DownloadProgressState(
+                        url = videoUrl,
+                        isDownloading = true,
+                        progress = map[videoUrl]?.progress ?: 0f,
+                        attempts = currentAttempt,
+                        isPausedOffline = false,
+                        errorMessage = if (currentAttempt > 1) "Retrying ($currentAttempt/$maxRetries)..." else null
+                    )
+                    activeDownloads.value = map
+                }
+
+                try {
+                    val service = NewPipe.getServiceByUrl(videoUrl)
+                    val extractor = service.getStreamExtractor(videoUrl)
+                    extractor.fetchPage()
+
+                    // Select 720p or closest resolution stream <= 720p
+                    val streams = extractor.videoStreams
+                    val stream720p = streams.filter {
+                        val height = it.resolution.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
+                        height <= 720
+                    }.maxByOrNull {
+                        it.resolution.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
+                    } ?: streams.firstOrNull()
+
+                    val downloadUrl = stream720p?.content
+                    if (downloadUrl.isNullOrBlank()) {
+                        throw java.io.IOException("No valid 720p stream found")
+                    }
+
+                    val fileName = "vid_" + videoUrl.hashCode().toString() + ".mp4"
+                    val targetFile = File(getDownloadsDir(), fileName)
+
+                    val request = Request.Builder().url(downloadUrl).build()
+                    val response = okHttpClient.newCall(request).execute()
+
+                    if (!response.isSuccessful) {
+                        throw java.io.IOException("HTTP error ${response.code}")
+                    }
+
+                    val body = response.body ?: throw java.io.IOException("Empty body")
+                    val totalBytes = body.contentLength()
+
+                    body.byteStream().use { input ->
+                        FileOutputStream(targetFile).use { output ->
+                            val buffer = ByteArray(8192)
+                            var read: Int
+                            var downloadedBytes = 0L
+
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                downloadedBytes += read
+
+                                if (totalBytes > 0) {
+                                    val prog = (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                                    withContext(Dispatchers.Main) {
+                                        val map = activeDownloads.value.toMutableMap()
+                                        val cur = map[videoUrl]
+                                        if (cur != null && cur.isDownloading) {
+                                            map[videoUrl] = cur.copy(progress = prog)
+                                            activeDownloads.value = map
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Download completed successfully
+                    withContext(Dispatchers.Main) {
+                        val record = DownloadedVideoRecord(
+                            url = videoUrl,
+                            relativePath = fileName,
+                            title = title,
+                            thumbnailUrl = thumbnailUrl
+                        )
+                        val newDownloadsMap = downloadedVideos.value.toMutableMap()
+                        newDownloadsMap[videoUrl] = record
+                        downloadedVideos.value = newDownloadsMap
+                        saveDownloadedVideos()
+
+                        val activeMap = activeDownloads.value.toMutableMap()
+                        activeMap.remove(videoUrl)
+                        activeDownloads.value = activeMap
+                        pendingRetryQueue.remove(videoUrl)
+                    }
+                    return@launch
+
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    if (!isOnline()) {
+                        withContext(Dispatchers.Main) {
+                            pendingRetryQueue.add(videoUrl)
+                            val map = activeDownloads.value.toMutableMap()
+                            map[videoUrl] = DownloadProgressState(
+                                url = videoUrl,
+                                isDownloading = true,
+                                progress = map[videoUrl]?.progress ?: 0f,
+                                attempts = currentAttempt,
+                                isPausedOffline = true,
+                                errorMessage = "Paused (Offline)"
+                            )
+                            activeDownloads.value = map
+                        }
+                        return@launch
+                    }
+                    // Wait briefly before retrying
+                    kotlinx.coroutines.delay(2000L)
+                }
+            }
+
+            // If we reached maxRetries without success:
+            withContext(Dispatchers.Main) {
+                val map = activeDownloads.value.toMutableMap()
+                map[videoUrl] = DownloadProgressState(
+                    url = videoUrl,
+                    isDownloading = false,
+                    progress = 0f,
+                    attempts = maxRetries,
+                    isPausedOffline = false,
+                    errorMessage = "Download failed after 9 retries"
+                )
+                activeDownloads.value = map
+                pendingRetryQueue.remove(videoUrl)
+            }
+        }
+    }
+
+    private fun observeNetworkChanges() {
+        try {
+            val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            if (connectivityManager != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                connectivityManager.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: android.net.Network) {
+                        resumePendingDownloads()
+                    }
+                })
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun resumePendingDownloads() {
+        if (!isOnline()) return
+        val pendingList = pendingRetryQueue.toList()
+        for (url in pendingList) {
+            val activeState = activeDownloads.value[url]
+            val videoTitle = loadedPlaylists.value.values.flatMap { it.videos }
+                .firstOrNull { it.url == url }?.name ?: "Video"
+            val thumbUrl = loadedPlaylists.value.values.flatMap { it.videos }
+                .firstOrNull { it.url == url }?.let { getBestThumbnailUrl(it.thumbnails) }
+
+            pendingRetryQueue.remove(url)
+            // Restart download with up to 9 new attempts when re-connecting online
+            executeDownloadTask(url, videoTitle, thumbUrl, attempts = 0)
+        }
     }
 
     private fun loadHistoryAndBookmarks() {
