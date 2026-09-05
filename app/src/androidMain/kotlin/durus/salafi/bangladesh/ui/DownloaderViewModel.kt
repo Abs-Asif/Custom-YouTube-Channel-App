@@ -192,8 +192,36 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
         // Local fallback
         return listOf(
-            PlaylistSource("Islamic Knowledge & Series", "https://www.youtube.com/playlist?list=PL2lhA8P3D_GkXj5o3m3T1G1R3Yp1n0k5c"),
-            PlaylistSource("Al Madrasatu Al Umariyyah (AMAU)", "https://www.youtube.com/playlist?list=PL2lhA8P3D_Gk13g28x38G0y0sZ4s8M4oP")
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3aEmBOBbT9AffJPynBzTfea"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3b1HjwpMVZZrWsUlCLdPQPm"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3Yqn1lhxbOcB2J66Cr18cTt"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3Zhj3g9bUv31OlDl8ESMJAX"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3bD9Ktg_O8Xp0iwpqf-mx_F"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3YndSRhUBEXBW04sHklIlLG"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3ZYgsA7VW0QvqC1xJGVhcja"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3YWzXpxLv_GM9horsXCSN_n"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3aQm2gWxdQyiXwmPoV8Sq5c"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3agULpPzLyj-c42yX_L1vTR"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3aJkasqXtFChUDtSL38pBL8"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3bNqN6BEEeaEYdZRDjrB_2N"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvfcpZhOUZHfVc14_rr_9Lql"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvdLzcviRVyQo22diWQIt1j0"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvd9cfaRyhwUA3bTVbpL-hzE"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvfbPHDZLEgU_kMFInpyoXp-"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvdW-QI4ZjvLsibUWFx_cpIl"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvf5wO-fjVylERjNrfolq8eK"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvcSQBjIhNjwirBi_rALxCeL"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvdYzCDoXvsK5HgTRhz2E-xL"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpvfW7dq0oKV9MtD8_DPAronk"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpve4OQrBTE-XV4Q91gtLPzR3"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PL31nnk3uDpveU4Ckmq2dlcllWG9NDVsEP"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLYA6TONnYbVw"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLPoz5o7cI0DI"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLg_yXd5EU9leStTEKgZ9YC8iL1VhGgOjV"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLg_yXd5EU9lecNFMzqqaKC_MT_NwKcjm_"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLg_yXd5EU9ldKW9Ai8ZPZJmsJSCugLFkj"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLh00bXGWSenkeqngQHzLS2A4Dj9LaBC7p"),
+            PlaylistSource(url = "https://m.youtube.com/playlist?list=PLh00bXGWSennpmXyZwZdSlY4xojDeHFoq")
         )
     }
 
