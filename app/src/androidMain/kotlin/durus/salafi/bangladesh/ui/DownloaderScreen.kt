@@ -112,6 +112,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             gridState = gridState,
             listState = listState,
             lastPlayedUrl = lastPlayedUrl,
+            onRefresh = { viewModel.loadSourcesAndPlaylists(forceRefresh = true) },
             onBack = { selectedPlaylistUrl = null },
             onVideoSelected = { videoUrl, urls, index ->
                 val video = playlistData?.videos?.getOrNull(index)
@@ -449,6 +450,7 @@ fun PlaylistDetailScreen(
     gridState: LazyGridState = rememberLazyGridState(),
     listState: LazyListState = rememberLazyListState(),
     lastPlayedUrl: String? = null,
+    onRefresh: () -> Unit = {},
     onBack: () -> Unit,
     onVideoSelected: (String, List<String>, Int) -> Unit
 ) {
@@ -456,6 +458,14 @@ fun PlaylistDetailScreen(
     val videoUrls = remember(videos) { videos.map { it.url } }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    val pullToRefreshState = rememberPullToRefreshState()
+    if (pullToRefreshState.isRefreshing) {
+        LaunchedEffect(true) {
+            onRefresh()
+            pullToRefreshState.endRefresh()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -493,6 +503,7 @@ fun PlaylistDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .nestedScroll(pullToRefreshState.nestedScrollConnection)
         ) {
             if (playlistData == null || playlistData.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -573,6 +584,11 @@ fun PlaylistDetailScreen(
                     }
                 }
             }
+
+            PullToRefreshContainer(
+                state = pullToRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
 }

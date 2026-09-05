@@ -265,10 +265,19 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     )
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    val msg = if (!isOnline() || e is java.net.UnknownHostException || e is java.io.IOException) {
+                    val rawMsg = e.message ?: ""
+                    val isNetError = !isOnline() ||
+                        e is java.net.UnknownHostException ||
+                        e is java.io.IOException ||
+                        rawMsg.contains("googleapis", ignoreCase = true) ||
+                        rawMsg.contains("youtube", ignoreCase = true) ||
+                        rawMsg.contains("Unable to resolve host", ignoreCase = true) ||
+                        rawMsg.contains("Failed to connect", ignoreCase = true)
+
+                    val msg = if (isNetError) {
                         "You are offline. Please check your internet connection."
                     } else {
-                        e.message ?: "Failed to load playlist"
+                        rawMsg.ifBlank { "Failed to load playlist" }
                     }
                     playlistsMap[source.url] = PlaylistData(
                         title = source.title ?: "Playlist",
