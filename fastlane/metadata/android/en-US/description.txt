@@ -1,1 +1,1 @@
-Fookus Tube is a distraction free YouTube client with downloading capabilities.
+Durūs is a distraction free YouTube playlist client.

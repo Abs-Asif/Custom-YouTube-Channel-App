@@ -1,4 +1,4 @@
-package islamic.video.app.util
+package durus.salafi.bangladesh.util
 
 import android.content.Context
 import android.content.Intent
@@ -22,7 +22,7 @@ class AndroidPlatformBridge(private val context: Context) : PlatformBridge {
         onComplete: (String) -> Unit,
         onError: (String) -> Unit
     ) {
-        onError("Downloading not supported in FookusTube")
+        onError("Downloading not supported in Durūs")
     }
 
     override fun openSavedFolder(path: String) {

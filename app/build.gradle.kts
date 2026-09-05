@@ -67,11 +67,11 @@ kotlin {
 val dynamicVersionName = SimpleDateFormat("yyyy.MM.dd.HH.mm").format(Date())
 
 android {
-    namespace = "islamic.video.app"
+    namespace = "durus.salafi.bangladesh"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "islamic.video.app"
+        applicationId = "durus.salafi.bangladesh"
         minSdk = 24
         targetSdk = 34
         versionCode = 5

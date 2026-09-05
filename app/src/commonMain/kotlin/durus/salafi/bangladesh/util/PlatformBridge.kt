@@ -1,4 +1,4 @@
-package islamic.video.app.util
+package durus.salafi.bangladesh.util
 
 interface PlatformBridge {
     fun showToast(message: String)

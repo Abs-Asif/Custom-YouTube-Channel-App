@@ -1,4 +1,4 @@
-package islamic.video.app.ui.theme
+package durus.salafi.bangladesh.ui.theme
 
 import android.app.Activity
 import android.os.Build

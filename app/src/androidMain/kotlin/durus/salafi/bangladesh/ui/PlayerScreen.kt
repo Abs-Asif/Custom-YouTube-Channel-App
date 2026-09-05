@@ -1,4 +1,4 @@
-package islamic.video.app.ui
+package durus.salafi.bangladesh.ui
 
 import android.app.PictureInPictureParams
 import android.os.Build
@@ -7,13 +7,15 @@ import android.net.Uri
 import android.app.Activity
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,7 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.OutlinedTextField
-import islamic.video.app.model.SavedVideo
+import durus.salafi.bangladesh.model.SavedVideo
 
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,11 +55,22 @@ import androidx.activity.compose.BackHandler
 @Composable
 fun PlayerScreen(
     url: String,
+    playlistUrls: List<String> = emptyList(),
+    initialIndex: Int = 0,
     viewModel: DownloaderViewModel,
-    onBack: () -> Unit,
-    onChannelSelected: (String) -> Unit = {}
+    onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    var currentIndex by remember(initialIndex, playlistUrls) { mutableIntStateOf(initialIndex) }
+
+    val currentVideoUrl = remember(url, playlistUrls, currentIndex) {
+        if (playlistUrls.isNotEmpty() && currentIndex in playlistUrls.indices) {
+            playlistUrls[currentIndex]
+        } else {
+            url
+        }
+    }
+
     var streamExtractor by remember { mutableStateOf<StreamExtractor?>(null) }
     var streamUrl by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -82,6 +95,11 @@ fun PlayerScreen(
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == androidx.media3.common.Player.STATE_READY) {
                     totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                } else if (state == androidx.media3.common.Player.STATE_ENDED) {
+                    // Serial playback: auto advance if more videos in playlist
+                    if (playlistUrls.isNotEmpty() && currentIndex + 1 < playlistUrls.size) {
+                        currentIndex++
+                    }
                 }
             }
         }
@@ -91,11 +109,15 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(isPlaying) {
+    // Save watch record periodically during playback
+    LaunchedEffect(currentVideoUrl, isPlaying) {
         while (isPlaying) {
             currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
             totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-            kotlinx.coroutines.delay(500)
+            if (totalDuration > 0) {
+                viewModel.saveWatchRecord(currentVideoUrl, currentPosition, totalDuration)
+            }
+            kotlinx.coroutines.delay(1000)
         }
     }
 
@@ -103,11 +125,17 @@ fun PlayerScreen(
         onBack()
     }
 
-    LaunchedEffect(url) {
+    // Load video stream when currentVideoUrl changes
+    LaunchedEffect(currentVideoUrl) {
+        isLoading = true
+        errorMessage = null
+        exoPlayer.stop()
+        exoPlayer.clearMediaItems()
+
         withContext(Dispatchers.IO) {
             try {
-                val service = NewPipe.getServiceByUrl(url)
-                val extractor = service.getStreamExtractor(url)
+                val service = NewPipe.getServiceByUrl(currentVideoUrl)
+                val extractor = service.getStreamExtractor(currentVideoUrl)
                 extractor.fetchPage()
                 
                 val bestVideo = extractor.videoStreams.maxByOrNull { it.resolution.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0 }
@@ -128,6 +156,13 @@ fun PlayerScreen(
                             .build()
                         exoPlayer.setMediaItem(mediaItem)
                         exoPlayer.prepare()
+
+                        // Resume watch record if available
+                        val record = viewModel.getWatchRecord(currentVideoUrl)
+                        if (record != null && record.positionMs > 0 && record.positionMs < record.durationMs - 5000) {
+                            exoPlayer.seekTo(record.positionMs)
+                        }
+
                         exoPlayer.playWhenReady = true
                     } else {
                         errorMessage = "No playable stream found"
@@ -144,10 +179,13 @@ fun PlayerScreen(
     }
 
     val activity = context as? Activity
-    DisposableEffect(Unit) {
+    DisposableEffect(currentVideoUrl) {
         activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
             activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (exoPlayer.duration > 0) {
+                viewModel.saveWatchRecord(currentVideoUrl, exoPlayer.currentPosition, exoPlayer.duration)
+            }
             mediaSession.release()
             exoPlayer.release()
         }
@@ -199,9 +237,14 @@ fun PlayerScreen(
         topBar = {
             if (!hideUi) {
                 TopAppBar(
-                    title = { Text("Playing") },
+                    title = {
+                        Text(
+                            text = if (playlistUrls.isNotEmpty()) "Playing (${currentIndex + 1}/${playlistUrls.size})" else "Playing",
+                            maxLines = 1
+                        )
+                    },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                     }
                 )
             }
@@ -222,8 +265,17 @@ fun PlayerScreen(
                         Row(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            if (playlistUrls.size > 1) {
+                                IconButton(
+                                    onClick = { if (currentIndex > 0) currentIndex-- },
+                                    enabled = currentIndex > 0
+                                ) {
+                                    Icon(Icons.Default.SkipPrevious, "Previous Video")
+                                }
+                            }
+
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                 IconButton(onClick = {
                                     (context as? Activity)?.enterPictureInPictureMode(
@@ -235,6 +287,7 @@ fun PlayerScreen(
                                     Icon(Icons.Default.PictureInPicture, "PIP", tint = MaterialTheme.colorScheme.onPrimaryContainer)
                                 }
                             }
+
                             IconButton(onClick = {
                                 isMusicMode = !isMusicMode
                             }) {
@@ -243,6 +296,15 @@ fun PlayerScreen(
                                     "Music Mode", 
                                     tint = if (isMusicMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer
                                 )
+                            }
+
+                            if (playlistUrls.size > 1) {
+                                IconButton(
+                                    onClick = { if (currentIndex + 1 < playlistUrls.size) currentIndex++ },
+                                    enabled = currentIndex + 1 < playlistUrls.size
+                                ) {
+                                    Icon(Icons.Default.SkipNext, "Next Video")
+                                }
                             }
                         }
                     }
@@ -296,7 +358,7 @@ fun PlayerScreen(
                         ) {
                             AndroidView(
                                 factory = { ctx ->
-                                    val viewLayout = android.view.LayoutInflater.from(ctx).inflate(islamic.video.app.R.layout.player_view_layout, null) as PlayerView
+                                    val viewLayout = android.view.LayoutInflater.from(ctx).inflate(durus.salafi.bangladesh.R.layout.player_view_layout, null) as PlayerView
                                     viewLayout.apply {
                                         player = exoPlayer
                                         useController = !isInPipMode
@@ -434,10 +496,10 @@ fun PlayerScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth().padding(8.dp)
                                 ) {
-                                    val uploaderUrl = streamExtractor?.uploaderUrl
+                                    // Channel info display - non-clickable as required by requirement 9
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable(enabled = uploaderUrl != null) { uploaderUrl?.let { onChannelSelected(it) } }.weight(1f)
+                                        modifier = Modifier.weight(1f)
                                     ) {
                                         val avatarUrl = streamExtractor?.uploaderAvatars?.firstOrNull()?.url
                                         if (avatarUrl != null) {
@@ -452,10 +514,14 @@ fun PlayerScreen(
                                             )
                                             Spacer(Modifier.width(12.dp))
                                         }
-                                        Text(uploaderText, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                                        Text(
+                                            uploaderText,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
                                     }
                                     
-                                    val isBookmarkedAnywhere = viewModel.bookmarks.value.values.flatten().any { it.url == url }
+                                    val isBookmarkedAnywhere = viewModel.bookmarks.value.values.flatten().any { it.url == currentVideoUrl }
                                     
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Surface(
@@ -492,12 +558,12 @@ fun PlayerScreen(
                         items(viewModel.bookmarks.value.keys.toList()) { playlist ->
                             Row(
                                 modifier = Modifier.fillMaxWidth().clickable {
-                                    val isSavedInThisPlaylist = viewModel.bookmarks.value[playlist]?.any { it.url == url } == true
+                                    val isSavedInThisPlaylist = viewModel.bookmarks.value[playlist]?.any { it.url == currentVideoUrl } == true
                                     if (isSavedInThisPlaylist) {
-                                        viewModel.removeVideoFromBookmark(playlist, url)
+                                        viewModel.removeVideoFromBookmark(playlist, currentVideoUrl)
                                     } else {
                                         val video = SavedVideo(
-                                            url = url,
+                                            url = currentVideoUrl,
                                             title = streamExtractor?.name ?: "",
                                             uploader = streamExtractor?.uploaderName ?: "",
                                             thumbUrl = streamExtractor?.thumbnails?.firstOrNull()?.url ?: ""
@@ -507,7 +573,7 @@ fun PlayerScreen(
                                 }.padding(vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                val isSavedInThisPlaylist = viewModel.bookmarks.value[playlist]?.any { it.url == url } == true
+                                val isSavedInThisPlaylist = viewModel.bookmarks.value[playlist]?.any { it.url == currentVideoUrl } == true
                                 Icon(
                                     if (isSavedInThisPlaylist) Icons.Default.Star else Icons.Default.StarBorder, 
                                     contentDescription = null,
@@ -534,7 +600,7 @@ fun PlayerScreen(
                             if (newPlaylistName.isNotBlank()) {
                                 viewModel.addBookmarkPlaylist(newPlaylistName)
                                 val video = SavedVideo(
-                                    url = url,
+                                    url = currentVideoUrl,
                                     title = streamExtractor?.name ?: "",
                                     uploader = streamExtractor?.uploaderName ?: "",
                                     thumbUrl = streamExtractor?.thumbnails?.firstOrNull()?.url ?: ""

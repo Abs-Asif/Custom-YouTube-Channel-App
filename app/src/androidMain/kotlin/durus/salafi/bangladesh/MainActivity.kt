@@ -1,4 +1,4 @@
-package islamic.video.app
+package durus.salafi.bangladesh
 
 import android.os.Bundle
 import android.content.Intent
@@ -19,9 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import islamic.video.app.ui.DownloaderScreen
-import islamic.video.app.ui.DownloaderViewModel
-import islamic.video.app.ui.theme.ExpressiveTheme
+import durus.salafi.bangladesh.ui.DownloaderScreen
+import durus.salafi.bangladesh.ui.DownloaderViewModel
+import durus.salafi.bangladesh.ui.theme.ExpressiveTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        org.schabi.newpipe.extractor.NewPipe.init(islamic.video.app.api.OkHttpDownloader())
+        org.schabi.newpipe.extractor.NewPipe.init(durus.salafi.bangladesh.api.OkHttpDownloader())
         val imageLoader = coil.ImageLoader.Builder(this)
             .components {
                 add(coil.decode.VideoFrameDecoder.Factory())
