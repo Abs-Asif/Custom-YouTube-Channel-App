@@ -148,6 +148,14 @@ fun PlayerScreen(
 
         withContext(Dispatchers.IO) {
             try {
+                if (!viewModel.isOnline()) {
+                    withContext(Dispatchers.Main) {
+                        errorMessage = "You are offline. Please check your internet connection."
+                        isLoading = false
+                    }
+                    return@withContext
+                }
+
                 val service = NewPipe.getServiceByUrl(currentVideoUrl)
                 val extractor = service.getStreamExtractor(currentVideoUrl)
                 extractor.fetchPage()
@@ -185,7 +193,12 @@ fun PlayerScreen(
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    errorMessage = e.message ?: "Failed to load video"
+                    val msg = if (!viewModel.isOnline() || e is java.net.UnknownHostException || e is java.io.IOException) {
+                        "You are offline. Please check your internet connection."
+                    } else {
+                        e.message ?: "Failed to load video"
+                    }
+                    errorMessage = msg
                     isLoading = false
                 }
             }
