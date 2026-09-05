@@ -1,4 +1,4 @@
-package islamic.video.app.model
+package durus.salafi.bangladesh.model
 
 import kotlinx.serialization.Serializable
 
@@ -21,4 +21,18 @@ data class OfflinePreview(
     val thumbUrl: String,
     val maxResolution: String,
     val availableQualities: List<String>
+)
+
+@Serializable
+data class PlaylistSource(
+    val title: String? = null,
+    val url: String
+)
+
+@Serializable
+data class WatchRecord(
+    val videoUrl: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val lastUpdated: Long = System.currentTimeMillis()
 )

@@ -1,4 +1,4 @@
-package islamic.video.app.api
+package durus.salafi.bangladesh.api
 
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request

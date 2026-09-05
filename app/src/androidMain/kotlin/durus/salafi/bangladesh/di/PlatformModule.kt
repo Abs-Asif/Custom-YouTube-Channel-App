@@ -1,9 +1,9 @@
-package islamic.video.app.di
+package durus.salafi.bangladesh.di
 
 import org.koin.core.module.Module
 import org.koin.dsl.module
-import islamic.video.app.util.PlatformBridge
-import islamic.video.app.util.AndroidPlatformBridge
+import durus.salafi.bangladesh.util.PlatformBridge
+import durus.salafi.bangladesh.util.AndroidPlatformBridge
 
 actual fun platformModule(): Module = module {
     single<PlatformBridge> { AndroidPlatformBridge(get()) }
