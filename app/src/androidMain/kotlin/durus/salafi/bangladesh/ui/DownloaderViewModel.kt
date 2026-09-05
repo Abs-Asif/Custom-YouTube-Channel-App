@@ -96,6 +96,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     // Local Search Query
     val localSearchQuery = mutableStateOf("")
 
+    // Pinned Playlists & Reversed Order
+    val pinnedPlaylists = mutableStateOf<Set<String>>(emptySet())
+    val reversedPlaylists = mutableStateOf<Set<String>>(emptySet())
+
     // Watch Records
     val watchRecords = mutableStateOf<Map<String, WatchRecord>>(emptyMap())
 
@@ -108,9 +112,53 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         loadHistoryAndBookmarks()
         loadWatchRecords()
         loadDownloadedVideos()
+        loadPinnedAndReversedPlaylists()
         loadSourcesAndPlaylists()
         observeNetworkChanges()
     }
+
+    private fun loadPinnedAndReversedPlaylists() {
+        try {
+            pinnedPlaylists.value = prefs.getStringSet("pinned_playlists_set", emptySet()) ?: emptySet()
+            reversedPlaylists.value = prefs.getStringSet("reversed_playlists_set", emptySet()) ?: emptySet()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun togglePinPlaylist(url: String) {
+        val current = pinnedPlaylists.value.toMutableSet()
+        if (current.contains(url)) {
+            current.remove(url)
+        } else {
+            current.add(url)
+        }
+        pinnedPlaylists.value = current
+        try {
+            prefs.edit().putStringSet("pinned_playlists_set", current).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun isPlaylistPinned(url: String): Boolean = pinnedPlaylists.value.contains(url)
+
+    fun togglePlaylistOrder(url: String) {
+        val current = reversedPlaylists.value.toMutableSet()
+        if (current.contains(url)) {
+            current.remove(url)
+        } else {
+            current.add(url)
+        }
+        reversedPlaylists.value = current
+        try {
+            prefs.edit().putStringSet("reversed_playlists_set", current).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun isPlaylistReversed(url: String): Boolean = reversedPlaylists.value.contains(url)
 
     private fun loadDownloadedVideos() {
         try {
@@ -154,6 +202,34 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun isDownloaded(videoUrl: String): Boolean {
         return getDownloadedFile(videoUrl) != null
+    }
+
+    fun getDownloadedVideosSize(): Long {
+        val dir = getDownloadsDir()
+        return if (dir.exists()) dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
+    }
+
+    fun getImageCacheSize(): Long {
+        val context = getApplication<Application>()
+        val cacheDir = context.cacheDir.resolve("image_cache")
+        return if (cacheDir.exists()) cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
+    }
+
+    fun clearAllDownloads() {
+        val dir = getDownloadsDir()
+        if (dir.exists()) {
+            dir.listFiles()?.forEach { it.delete() }
+        }
+        downloadedVideos.value = emptyMap()
+        saveDownloadedVideos()
+    }
+
+    fun clearImageCache() {
+        val context = getApplication<Application>()
+        val cacheDir = context.cacheDir.resolve("image_cache")
+        if (cacheDir.exists()) {
+            cacheDir.deleteRecursively()
+        }
     }
 
     fun deleteDownload(videoUrl: String) {
@@ -548,8 +624,18 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 }
 
                 try {
-                    val plInfo = PlaylistInfo.getInfo(source.url)
-                    val items = plInfo.relatedItems.filterIsInstance<StreamInfoItem>()
+                    val service = NewPipe.getServiceByUrl(source.url)
+                    val plInfo = PlaylistInfo.getInfo(service, source.url)
+                    val items = mutableListOf<StreamInfoItem>()
+                    items.addAll(plInfo.relatedItems.filterIsInstance<StreamInfoItem>())
+
+                    var page: org.schabi.newpipe.extractor.Page? = plInfo.nextPage
+                    while (org.schabi.newpipe.extractor.Page.isValid(page)) {
+                        val moreItems = PlaylistInfo.getMoreItems(service, source.url, page)
+                        items.addAll(moreItems.items.filterIsInstance<StreamInfoItem>())
+                        page = moreItems.nextPage
+                    }
+
                     val plTitle = source.title?.takeIf { it.isNotBlank() } ?: plInfo.name ?: "Playlist"
                     val thumb = getBestThumbnailUrl(plInfo.thumbnails) ?: items.firstOrNull()?.let { getBestThumbnailUrl(it.thumbnails) }
 
@@ -595,6 +681,82 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
             withContext(Dispatchers.Main) {
                 isLoadingSources.value = false
+            }
+        }
+    }
+
+    fun refreshPlaylist(playlistUrl: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val isDeviceOnline = isOnline()
+            if (!isDeviceOnline) {
+                withContext(Dispatchers.Main) {
+                    val currentMap = loadedPlaylists.value.toMutableMap()
+                    val curData = currentMap[playlistUrl]
+                    if (curData != null) {
+                        currentMap[playlistUrl] = curData.copy(
+                            isLoading = false,
+                            errorMessage = "You are offline. Please check your internet connection."
+                        )
+                        loadedPlaylists.value = currentMap.toMap()
+                    }
+                }
+                return@launch
+            }
+
+            withContext(Dispatchers.Main) {
+                val currentMap = loadedPlaylists.value.toMutableMap()
+                val curData = currentMap[playlistUrl]
+                currentMap[playlistUrl] = (curData ?: PlaylistData(title = "Playlist", url = playlistUrl)).copy(
+                    isLoading = true,
+                    errorMessage = null
+                )
+                loadedPlaylists.value = currentMap.toMap()
+            }
+
+            try {
+                val service = NewPipe.getServiceByUrl(playlistUrl)
+                val plInfo = PlaylistInfo.getInfo(service, playlistUrl)
+                val items = mutableListOf<StreamInfoItem>()
+                items.addAll(plInfo.relatedItems.filterIsInstance<StreamInfoItem>())
+
+                var page: org.schabi.newpipe.extractor.Page? = plInfo.nextPage
+                while (org.schabi.newpipe.extractor.Page.isValid(page)) {
+                    val moreItems = PlaylistInfo.getMoreItems(service, playlistUrl, page)
+                    items.addAll(moreItems.items.filterIsInstance<StreamInfoItem>())
+                    page = moreItems.nextPage
+                }
+
+                val plTitle = plInfo.name ?: "Playlist"
+                val thumb = getBestThumbnailUrl(plInfo.thumbnails) ?: items.firstOrNull()?.let { getBestThumbnailUrl(it.thumbnails) }
+
+                val updatedData = PlaylistData(
+                    title = plTitle,
+                    url = playlistUrl,
+                    thumbnailUrl = thumb,
+                    videoCount = items.size,
+                    videos = items,
+                    isLoading = false
+                )
+
+                withContext(Dispatchers.Main) {
+                    val currentMap = loadedPlaylists.value.toMutableMap()
+                    currentMap[playlistUrl] = updatedData
+                    loadedPlaylists.value = currentMap.toMap()
+                    savePlaylistsToCache(loadedPlaylists.value)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    val currentMap = loadedPlaylists.value.toMutableMap()
+                    val curData = currentMap[playlistUrl]
+                    if (curData != null) {
+                        currentMap[playlistUrl] = curData.copy(
+                            isLoading = false,
+                            errorMessage = e.message?.ifBlank { "Failed to load playlist" } ?: "Failed to load playlist"
+                        )
+                        loadedPlaylists.value = currentMap.toMap()
+                    }
+                }
             }
         }
     }
