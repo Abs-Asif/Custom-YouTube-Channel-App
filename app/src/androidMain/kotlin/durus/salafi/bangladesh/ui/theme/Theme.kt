@@ -11,7 +11,32 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.view.WindowCompat
+
+val GoogleSansFontFamily = FontFamily(
+    Font(durus.salafi.bangladesh.R.font.google_sans)
+)
+
+val AppTypography = Typography(
+    displayLarge = Typography().displayLarge.copy(fontFamily = GoogleSansFontFamily),
+    displayMedium = Typography().displayMedium.copy(fontFamily = GoogleSansFontFamily),
+    displaySmall = Typography().displaySmall.copy(fontFamily = GoogleSansFontFamily),
+    headlineLarge = Typography().headlineLarge.copy(fontFamily = GoogleSansFontFamily),
+    headlineMedium = Typography().headlineMedium.copy(fontFamily = GoogleSansFontFamily),
+    headlineSmall = Typography().headlineSmall.copy(fontFamily = GoogleSansFontFamily),
+    titleLarge = Typography().titleLarge.copy(fontFamily = GoogleSansFontFamily),
+    titleMedium = Typography().titleMedium.copy(fontFamily = GoogleSansFontFamily),
+    titleSmall = Typography().titleSmall.copy(fontFamily = GoogleSansFontFamily),
+    bodyLarge = Typography().bodyLarge.copy(fontFamily = GoogleSansFontFamily),
+    bodyMedium = Typography().bodyMedium.copy(fontFamily = GoogleSansFontFamily),
+    bodySmall = Typography().bodySmall.copy(fontFamily = GoogleSansFontFamily),
+    labelLarge = Typography().labelLarge.copy(fontFamily = GoogleSansFontFamily),
+    labelMedium = Typography().labelMedium.copy(fontFamily = GoogleSansFontFamily),
+    labelSmall = Typography().labelSmall.copy(fontFamily = GoogleSansFontFamily)
+)
 
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFFD0BCFF),
@@ -119,7 +144,7 @@ fun ExpressiveTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography(),
+        typography = AppTypography,
         shapes = M3ExpressiveShapes,
         content = content
     )
