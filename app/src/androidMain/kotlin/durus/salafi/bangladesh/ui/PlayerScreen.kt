@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Rational
 import android.net.Uri
 import android.app.Activity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -79,8 +80,21 @@ fun PlayerScreen(
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
 
-    val exoPlayer = remember { ExoPlayer.Builder(context).build() }
-    val mediaSession = remember { androidx.media3.session.MediaSession.Builder(context, exoPlayer).build() }
+    val exoPlayer = remember(context) { durus.salafi.bangladesh.service.PlaybackService.getOrCreatePlayer(context) }
+
+    DisposableEffect(context) {
+        val intent = android.content.Intent(context, durus.salafi.bangladesh.service.PlaybackService::class.java)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        onDispose {}
+    }
 
     var isPlaying by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableLongStateOf(0L) }
@@ -186,8 +200,6 @@ fun PlayerScreen(
             if (exoPlayer.duration > 0) {
                 viewModel.saveWatchRecord(currentVideoUrl, exoPlayer.currentPosition, exoPlayer.duration)
             }
-            mediaSession.release()
-            exoPlayer.release()
         }
     }
 
@@ -491,51 +503,129 @@ fun PlayerScreen(
                         if (titleText != null && uploaderText != null) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(titleText, style = MaterialTheme.typography.titleLarge)
-                                Spacer(Modifier.height(16.dp))
+                                Spacer(Modifier.height(12.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth().padding(8.dp)
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                 ) {
-                                    // Channel info display - non-clickable as required by requirement 9
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        val avatarUrl = streamExtractor?.uploaderAvatars?.firstOrNull()?.url
-                                        if (avatarUrl != null) {
-                                            AsyncImage(
-                                                model = avatarUrl,
-                                                contentDescription = "Channel Avatar",
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .clip(androidx.compose.foundation.shape.CircleShape),
-                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                                alignment = Alignment.Center
-                                            )
-                                            Spacer(Modifier.width(12.dp))
-                                        }
-                                        Text(
-                                            uploaderText,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                    val avatarUrl = streamExtractor?.uploaderAvatars?.firstOrNull()?.url
+                                    if (avatarUrl != null) {
+                                        AsyncImage(
+                                            model = avatarUrl,
+                                            contentDescription = "Channel Avatar",
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(androidx.compose.foundation.shape.CircleShape),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            alignment = Alignment.Center
                                         )
+                                        Spacer(Modifier.width(12.dp))
                                     }
-                                    
-                                    val isBookmarkedAnywhere = viewModel.bookmarks.value.values.flatten().any { it.url == currentVideoUrl }
-                                    
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Surface(
-                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                                            color = MaterialTheme.colorScheme.secondaryContainer,
-                                            modifier = Modifier.clickable { showBookmarkDialog = true }
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically
+                                    Text(
+                                        uploaderText,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                if (playlistUrls.isNotEmpty()) {
+                                    Spacer(Modifier.height(16.dp))
+                                    Text(
+                                        "Playlist Videos",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+
+                                    // Find current loaded playlist data from viewModel
+                                    val currentPlaylistData = viewModel.loadedPlaylists.value.values.firstOrNull { pl ->
+                                        pl.videos.map { it.url } == playlistUrls
+                                    }
+
+                                    LazyColumn(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(playlistUrls.size) { idx ->
+                                            val itemUrl = playlistUrls[idx]
+                                            val videoItem = currentPlaylistData?.videos?.getOrNull(idx)
+                                            val isSelected = idx == currentIndex
+
+                                            val itemTitle = videoItem?.name ?: if (isSelected && titleText != null) titleText else "Video ${idx + 1}"
+                                            val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(videoItem?.thumbnails)
+                                                ?: streamExtractor?.thumbnails?.firstOrNull()?.url.takeIf { isSelected }
+
+                                            val durationText = if (videoItem != null && videoItem.duration > 0) {
+                                                val mins = videoItem.duration / 60
+                                                val secs = videoItem.duration % 60
+                                                "%d:%02d".format(mins, secs)
+                                            } else null
+
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { currentIndex = idx },
+                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                                             ) {
-                                                Icon(if (isBookmarkedAnywhere) Icons.Default.Star else Icons.Default.StarBorder, contentDescription = "Save to bookmark", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                                                Spacer(Modifier.width(4.dp))
-                                                Text("Save", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                                Row(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .width(100.dp)
+                                                            .aspectRatio(16f / 9f)
+                                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                    ) {
+                                                        if (thumbUrl != null) {
+                                                            AsyncImage(
+                                                                model = thumbUrl,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                            )
+                                                        }
+                                                        if (durationText != null) {
+                                                            Surface(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.BottomEnd)
+                                                                    .padding(4.dp),
+                                                                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
+                                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = durationText,
+                                                                    color = androidx.compose.ui.graphics.Color.White,
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    Spacer(Modifier.width(12.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = itemTitle,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                                                            maxLines = 2,
+                                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        if (isSelected) {
+                                                            Text(
+                                                                text = "Now Playing",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
