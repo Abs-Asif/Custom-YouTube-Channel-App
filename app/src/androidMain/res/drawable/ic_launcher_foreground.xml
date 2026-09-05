@@ -3,12 +3,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Crescent Moon Path -->
+    <!-- Minimal White Play Triangle Icon centered -->
     <path
-        android:fillColor="#006C4C"
-        android:pathData="M54,20 C35.2,20 20,35.2 20,54 C20,72.8 35.2,88 54,88 C62.8,88 70.8,84.6 76.8,79 C63.5,81 50.5,70.5 50.5,54 C50.5,37.5 63.5,27 76.8,29 C70.8,23.4 62.8,20 54,20 Z" />
-    <!-- Play Triangle Symbol inside Crescent -->
-    <path
-        android:fillColor="#1B5E20"
-        android:pathData="M52,43 L66,54 L52,65 Z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,34 L72,54 L44,74 Z" />
 </vector>

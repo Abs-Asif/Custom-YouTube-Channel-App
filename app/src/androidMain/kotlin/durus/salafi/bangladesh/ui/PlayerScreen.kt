@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +46,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.BorderStroke
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,6 +83,7 @@ fun PlayerScreen(
     
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
+    var showDownloadOptionSheet by remember { mutableStateOf(false) }
 
     val exoPlayer = remember(context) { durus.salafi.bangladesh.service.PlaybackService.getOrCreatePlayer(context) }
 
@@ -139,14 +144,49 @@ fun PlayerScreen(
         onBack()
     }
 
-    // Load video stream when currentVideoUrl changes
+    // Load video stream when currentVideoUrl changes unless already playing this stream
     LaunchedEffect(currentVideoUrl) {
+        // Check if exoPlayer is already playing a stream or local file for this currentVideoUrl
+        val currentTag = exoPlayer.currentMediaItem?.mediaId
+        if (currentTag == currentVideoUrl && exoPlayer.playbackState != androidx.media3.common.Player.STATE_IDLE) {
+            isLoading = false
+            return@LaunchedEffect
+        }
+
         isLoading = true
         errorMessage = null
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
 
         withContext(Dispatchers.IO) {
+            val localDownloadedFile = viewModel.getDownloadedFile(currentVideoUrl)
+            if (localDownloadedFile != null) {
+                withContext(Dispatchers.Main) {
+                    val record = viewModel.downloadedVideos.value[currentVideoUrl]
+                    val mediaItem = androidx.media3.common.MediaItem.Builder()
+                        .setMediaId(currentVideoUrl)
+                        .setUri(Uri.fromFile(localDownloadedFile))
+                        .setMediaMetadata(
+                            androidx.media3.common.MediaMetadata.Builder()
+                                .setTitle(record?.title ?: "Downloaded Video")
+                                .setArtworkUri(Uri.parse(record?.thumbnailUrl ?: ""))
+                                .build()
+                        )
+                        .build()
+                    exoPlayer.setMediaItem(mediaItem)
+                    exoPlayer.prepare()
+
+                    val watchRecord = viewModel.getWatchRecord(currentVideoUrl)
+                    if (watchRecord != null && watchRecord.positionMs > 0 && watchRecord.positionMs < watchRecord.durationMs - 5000) {
+                        exoPlayer.seekTo(watchRecord.positionMs)
+                    }
+
+                    exoPlayer.playWhenReady = true
+                    isLoading = false
+                }
+                return@withContext
+            }
+
             try {
                 if (!viewModel.isOnline()) {
                     withContext(Dispatchers.Main) {
@@ -167,6 +207,7 @@ fun PlayerScreen(
                     streamUrl = bestVideo?.content
                     if (streamUrl != null) {
                         val mediaItem = androidx.media3.common.MediaItem.Builder()
+                            .setMediaId(currentVideoUrl)
                             .setUri(Uri.parse(streamUrl))
                             .setMediaMetadata(
                                 androidx.media3.common.MediaMetadata.Builder()
@@ -323,6 +364,17 @@ fun PlayerScreen(
                                 )
                             }
 
+                                val isDownloaded = viewModel.isDownloaded(currentVideoUrl)
+                                IconButton(onClick = {
+                                    showDownloadOptionSheet = true
+                                }) {
+                                    Icon(
+                                        imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                                        contentDescription = "Download Options",
+                                        tint = if (isDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+
                             if (playlistUrls.size > 1) {
                                 IconButton(
                                     onClick = { if (currentIndex + 1 < playlistUrls.size) currentIndex++ },
@@ -435,53 +487,93 @@ fun PlayerScreen(
                                 .aspectRatio(16f / 9f)
                         }
 
+                        val thumbnailUrl = streamExtractor?.thumbnails?.firstOrNull()?.url
+                            ?: viewModel.downloadedVideos.value[currentVideoUrl]?.thumbnailUrl
+
                         Surface(
                             modifier = musicModifier,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            color = androidx.compose.ui.graphics.Color.Black,
                             shadowElevation = if (isFullscreen || isInPipMode) 0.dp else 12.dp
                         ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize().padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Icon(Icons.Default.Headset, contentDescription = null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.height(12.dp))
-
-                                val posMinutes = (currentPosition / 1000) / 60
-                                val posSeconds = (currentPosition / 1000) % 60
-                                val durMinutes = (totalDuration / 1000) / 60
-                                val durSeconds = (totalDuration / 1000) % 60
-                                val timeText = "%d:%02d / %d:%02d".format(posMinutes, posSeconds, durMinutes, durSeconds)
-
-                                if (totalDuration > 0) {
-                                    Slider(
-                                        value = currentPosition.toFloat(),
-                                        onValueChange = { newPos ->
-                                            exoPlayer.seekTo(newPos.toLong())
-                                        },
-                                        valueRange = 0f..totalDuration.toFloat(),
-                                        modifier = Modifier.fillMaxWidth(0.85f)
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (!thumbnailUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = thumbnailUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .blur(32.dp),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                     )
-                                    Text(timeText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Surface(
+                                        modifier = Modifier.fillMaxSize(),
+                                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)
+                                    ) {}
                                 }
 
-                                Spacer(Modifier.height(12.dp))
-                                FilledIconButton(
-                                    onClick = {
-                                        if (exoPlayer.isPlaying) {
-                                            exoPlayer.pause()
-                                        } else {
-                                            exoPlayer.play()
-                                        }
-                                    },
-                                    modifier = Modifier.size(56.dp)
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.9f)
+                                        .padding(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                                    ),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = if (isPlaying) "Pause" else "Play",
-                                        modifier = Modifier.size(32.dp)
-                                    )
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Headset,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(40.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+
+                                        val posMinutes = (currentPosition / 1000) / 60
+                                        val posSeconds = (currentPosition / 1000) % 60
+                                        val durMinutes = (totalDuration / 1000) / 60
+                                        val durSeconds = (totalDuration / 1000) % 60
+                                        val timeText = "%d:%02d / %d:%02d".format(posMinutes, posSeconds, durMinutes, durSeconds)
+
+                                        if (totalDuration > 0) {
+                                            Slider(
+                                                value = currentPosition.toFloat(),
+                                                onValueChange = { newPos ->
+                                                    exoPlayer.seekTo(newPos.toLong())
+                                                },
+                                                valueRange = 0f..totalDuration.toFloat(),
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                            Text(
+                                                timeText,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        Spacer(Modifier.height(8.dp))
+                                        FilledIconButton(
+                                            onClick = {
+                                                if (exoPlayer.isPlaying) {
+                                                    exoPlayer.pause()
+                                                } else {
+                                                    exoPlayer.play()
+                                                }
+                                            },
+                                            modifier = Modifier.size(48.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -511,35 +603,11 @@ fun PlayerScreen(
 
                     if (!hideUi) {
                         val titleText = streamExtractor?.name
-                        val uploaderText = streamExtractor?.uploaderName
+                            ?: viewModel.downloadedVideos.value[currentVideoUrl]?.title
 
-                        if (titleText != null && uploaderText != null) {
+                        if (titleText != null) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(titleText, style = MaterialTheme.typography.titleLarge)
-                                Spacer(Modifier.height(12.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                ) {
-                                    val avatarUrl = streamExtractor?.uploaderAvatars?.firstOrNull()?.url
-                                    if (avatarUrl != null) {
-                                        AsyncImage(
-                                            model = avatarUrl,
-                                            contentDescription = "Channel Avatar",
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(androidx.compose.foundation.shape.CircleShape),
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                            alignment = Alignment.Center
-                                        )
-                                        Spacer(Modifier.width(12.dp))
-                                    }
-                                    Text(
-                                        uploaderText,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
 
                                 if (playlistUrls.isNotEmpty()) {
                                     Spacer(Modifier.height(16.dp))
@@ -649,6 +717,18 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+
+    if (showDownloadOptionSheet) {
+        VideoOptionBottomSheet(
+            target = VideoDownloadTarget(
+                url = currentVideoUrl,
+                title = streamExtractor?.name ?: "Video",
+                thumbnailUrl = streamExtractor?.thumbnails?.firstOrNull()?.url
+            ),
+            viewModel = viewModel,
+            onDismiss = { showDownloadOptionSheet = false }
+        )
     }
 
     if (showBookmarkDialog) {
