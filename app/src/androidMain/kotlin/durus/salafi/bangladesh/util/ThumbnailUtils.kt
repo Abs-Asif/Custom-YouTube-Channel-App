@@ -9,5 +9,18 @@ fun getBestThumbnailUrl(thumbnails: List<Image>?): String? {
         val level = img.estimatedResolutionLevel?.ordinal ?: 0
         area + level * 1000
     } ?: thumbnails.lastOrNull()
-    return best?.url
+
+    val url = best?.url ?: return null
+    return upgradeThumbnailResolution(url)
+}
+
+fun upgradeThumbnailResolution(url: String?): String? {
+    if (url.isNullOrBlank()) return null
+    var bestUrl = url
+    if (bestUrl.contains("ytimg.com") || bestUrl.contains("ggpht.com")) {
+        if (bestUrl.contains("default.jpg") || bestUrl.contains("hqdefault.jpg") || bestUrl.contains("mqdefault.jpg") || bestUrl.contains("sddefault.jpg")) {
+            bestUrl = bestUrl.replace(Regex("(default|hqdefault|mqdefault|sddefault)\\.jpg"), "maxresdefault.jpg")
+        }
+    }
+    return bestUrl
 }

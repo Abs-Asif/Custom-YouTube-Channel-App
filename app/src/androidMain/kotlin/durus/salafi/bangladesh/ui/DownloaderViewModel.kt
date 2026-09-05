@@ -56,9 +56,9 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     private val prefs = application.getSharedPreferences("durus_prefs", Context.MODE_PRIVATE)
     private val okHttpClient = OkHttpClient()
 
-    // App Preferences
-    val themeMode = mutableIntStateOf(0)
-    val selectedTheme = mutableStateOf(AppTheme.Dynamic)
+    // App Preferences - Default and permanent settings: Dark (2) and Rose (AppTheme.Rose)
+    val themeMode = mutableIntStateOf(2)
+    val selectedTheme = mutableStateOf(AppTheme.Rose)
 
     val searchSource = mutableStateOf("YouTube")
     val activeFilter = mutableStateOf("Home") // "Home", "History", "Bookmarks"

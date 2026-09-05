@@ -1,22 +1,20 @@
-# MadrasaTube
+# Durūs
 
-MadrasaTube is an open-source, lightweight, distraction-free Islamic video client for Android. It focuses on clean, ad-free video streaming and audio playback alongside curated access to beneficial educational channels.
+Durūs is an open-source, lightweight, distraction-free Islamic video learning client for Android. It focuses on clean, ad-free video streaming alongside curated access to beneficial educational playlists.
 
 ## Features
-- Search and stream YouTube videos
-- Quick access to curated educational channels:
-  - **AMAU** (Al Madrasatu Al Umariyyah)
-  - **AMAR** (Al Madrasatu Al Rashidiyyah)
-  - **Arabic 101**
-  - **ilman Nafiya**
-- Audio-only mode with full playback controls (Play/Pause, seek slider)
-- Pull-to-refresh on search and channel pages
-- Custom playlists, bookmarking, and watch history
-- Dynamic app theming (System, Light, Dark)
+- Notification and system media playback controls (Play/Pause, next/previous video, seek 5 seconds backward/forward)
+- High-resolution video and playlist thumbnails
+- YouTube-style video list layout inside playlists with full edge-to-edge thumbnails in portrait and 2-column grid in landscape
+- Integrated compact video selector in player screen under channel name
+- Dark theme and Rose app styling by default
+- Audio-only mode with playback controls
+- Watch progress tracking and history
+- About page with app version and creator credit
 
 ## How to Build
 
-Building MadrasaTube is straightforward. Make sure you have JDK 17 and Android SDK installed.
+Building Durūs is straightforward. Make sure you have JDK 17 and Android SDK installed.
 
 1. Clone this repository.
 2. Open the project in Android Studio or terminal.

@@ -48,7 +48,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 fun DownloaderScreen(viewModel: DownloaderViewModel) {
     var selectedPlaylistUrl by remember { mutableStateOf<String?>(null) }
     var playingState by remember { mutableStateOf<PlayingTarget?>(null) }
-    var showSettings by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
 
     val loadedPlaylists by viewModel.loadedPlaylists
@@ -67,21 +67,21 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
         return
     }
 
-    if (showSettings) {
-        BackHandler { showSettings = false }
+    if (showAbout) {
+        BackHandler { showAbout = false }
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Settings") },
+                    title = { Text("About") },
                     navigationIcon = {
-                        IconButton(onClick = { showSettings = false }) {
+                        IconButton(onClick = { showAbout = false }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 )
             }
         ) { innerPadding ->
-            SettingsTab(viewModel = viewModel, contentPadding = innerPadding)
+            AboutScreen(onBack = { showAbout = false }, contentPadding = innerPadding)
         }
         return
     }
@@ -164,8 +164,8 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         IconButton(onClick = { isSearchActive = true }) {
                             Icon(Icons.Default.Search, contentDescription = "Search")
                         }
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        IconButton(onClick = { showAbout = true }) {
+                            Icon(Icons.Default.Info, contentDescription = "About")
                         }
                     }
                 }
@@ -367,6 +367,8 @@ fun PlaylistDetailScreen(
 ) {
     val videos = playlistData?.videos ?: emptyList()
     val videoUrls = remember(videos) { videos.map { it.url } }
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     Scaffold(
         topBar = {
@@ -429,25 +431,120 @@ fun PlaylistDetailScreen(
                         }
                     }
 
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 320.dp),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        items(videos.size) { index ->
-                            val item = videos[index]
-                            val record = watchRecords[item.url]
-                            VideoCardWithRecord(
-                                item = item,
-                                watchRecord = record,
-                                onClick = { onVideoSelected(item.url, videoUrls, index) }
-                            )
+                    if (isLandscape) {
+                        // Landscape mode: Grid view fitting 2 videos in a line
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            items(videos.size) { index ->
+                                val item = videos[index]
+                                val record = watchRecords[item.url]
+                                VideoCardWithRecord(
+                                    item = item,
+                                    watchRecord = record,
+                                    onClick = { onVideoSelected(item.url, videoUrls, index) }
+                                )
+                            }
+                        }
+                    } else {
+                        // Portrait mode: Full-width edge-to-edge thumbnails like YouTube app UI
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            items(videos.size) { index ->
+                                val item = videos[index]
+                                val record = watchRecords[item.url]
+                                YouTubeStyleVideoItem(
+                                    item = item,
+                                    watchRecord = record,
+                                    onClick = { onVideoSelected(item.url, videoUrls, index) }
+                                )
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun YouTubeStyleVideoItem(
+    item: StreamInfoItem,
+    watchRecord: WatchRecord?,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(item.thumbnails)
+            AsyncImage(
+                model = thumbUrl ?: "",
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+
+            if (item.duration > 0) {
+                val minutes = item.duration / 60
+                val seconds = item.duration % 60
+                val durationText = "%d:%02d".format(minutes, seconds)
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp),
+                    color = Color.Black.copy(alpha = 0.8f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = durationText,
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            if (watchRecord != null && watchRecord.durationMs > 0) {
+                val progress = (watchRecord.positionMs.toFloat() / watchRecord.durationMs.toFloat()).coerceIn(0f, 1f)
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.White.copy(alpha = 0.3f)
+                )
+            }
+        }
+
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            if (watchRecord != null && watchRecord.durationMs > 0) {
+                val percent = ((watchRecord.positionMs.toFloat() / watchRecord.durationMs.toFloat()) * 100).toInt().coerceIn(0, 100)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (percent >= 90) "Watched" else "$percent% watched",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -756,6 +853,16 @@ fun CustomisationScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, cont
 
 @Composable
 fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val packageInfo = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    val versionName = packageInfo?.versionName ?: "1.0.0"
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -781,12 +888,36 @@ fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
             Column(Modifier.padding(20.dp)) {
                 Text(
                     text = "Durūs",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = "A distraction-free, ad-free Islamic video learning app designed to facilitate focused study of curated playlists.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                Divider()
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "App Version",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = versionName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Creator Credit",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Created by Abs-Asif",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
