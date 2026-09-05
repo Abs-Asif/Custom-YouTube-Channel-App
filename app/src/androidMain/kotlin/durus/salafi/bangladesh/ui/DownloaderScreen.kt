@@ -13,8 +13,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +39,9 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,14 +54,19 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloaderScreen(viewModel: DownloaderViewModel) {
-    var selectedPlaylistUrl by remember { mutableStateOf<String?>(null) }
+    var selectedPlaylistUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var playingState by remember { mutableStateOf<PlayingTarget?>(null) }
-    var showAbout by remember { mutableStateOf(false) }
-    var isSearchActive by remember { mutableStateOf(false) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
+    var isSearchActive by rememberSaveable { mutableStateOf(false) }
+
+    val homeGridState = rememberLazyGridState()
+    val playlistGridStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.grid.LazyGridState>() }
+    val playlistListStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>() }
 
     val loadedPlaylists by viewModel.loadedPlaylists
     val isLoadingSources by viewModel.isLoadingSources
     val watchRecords by viewModel.watchRecords
+    val lastPlayedUrl = viewModel.lastPlayedUrl.value
     var localQuery by viewModel.localSearchQuery
 
     if (playingState != null) {
@@ -81,17 +94,24 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                 )
             }
         ) { innerPadding ->
-            AboutScreen(onBack = { showAbout = false }, contentPadding = innerPadding)
+            AboutScreen(onBack = null, contentPadding = innerPadding)
         }
         return
     }
 
     if (selectedPlaylistUrl != null) {
         BackHandler { selectedPlaylistUrl = null }
-        val playlistData = loadedPlaylists[selectedPlaylistUrl!!]
+        val playlistUrl = selectedPlaylistUrl!!
+        val playlistData = loadedPlaylists[playlistUrl]
+        val gridState = playlistGridStates.getOrPut(playlistUrl) { LazyGridState() }
+        val listState = playlistListStates.getOrPut(playlistUrl) { LazyListState() }
+
         PlaylistDetailScreen(
             playlistData = playlistData,
             watchRecords = watchRecords,
+            gridState = gridState,
+            listState = listState,
+            lastPlayedUrl = lastPlayedUrl,
             onBack = { selectedPlaylistUrl = null },
             onVideoSelected = { videoUrl, urls, index ->
                 val video = playlistData?.videos?.getOrNull(index)
@@ -126,6 +146,14 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
         }
     }
 
+    val searchFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) {
+            searchFocusRequester.requestFocus()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -134,31 +162,30 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         OutlinedTextField(
                             value = localQuery,
                             onValueChange = { localQuery = it },
-                            placeholder = { Text("Search video titles...") },
+                            placeholder = { Text("Search...") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
+                            shape = CircleShape,
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null)
+                            },
                             trailingIcon = {
-                                if (localQuery.isNotEmpty()) {
-                                    IconButton(onClick = { localQuery = "" }) {
-                                        Icon(Icons.Default.Close, contentDescription = "Clear")
-                                    }
+                                IconButton(onClick = {
+                                    isSearchActive = false
+                                    localQuery = ""
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close Search")
                                 }
-                            }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .focusRequester(searchFocusRequester)
                         )
                     } else {
                         Text("Durūs", fontWeight = FontWeight.Bold)
                     }
                 },
-                navigationIcon = {
-                    if (isSearchActive) {
-                        IconButton(onClick = {
-                            isSearchActive = false
-                            localQuery = ""
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close Search")
-                        }
-                    }
-                },
+                navigationIcon = {},
                 actions = {
                     if (!isSearchActive) {
                         IconButton(onClick = { isSearchActive = true }) {
@@ -170,16 +197,36 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            if (!isSearchActive && !lastPlayedUrl.isNullOrBlank()) {
+                ExtendedFloatingActionButton(
+                    text = { Text("Resume") },
+                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Resume Play") },
+                    onClick = {
+                        playingState = PlayingTarget(lastPlayedUrl, listOf(lastPlayedUrl), 0)
+                    },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
         }
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .nestedScroll(pullToRefreshState.nestedScrollConnection)
         ) {
             if (isSearchActive) {
-                // Search across all loaded playlist videos
-                val allVideosWithPlaylistName = remember(loadedPlaylists, localQuery) {
+                val matchingPlaylists = remember(loadedPlaylists, localQuery) {
+                    if (localQuery.isNotBlank()) {
+                        val q = localQuery.trim().lowercase()
+                        loadedPlaylists.values.filter { it.title.lowercase().contains(q) }
+                    } else emptyList()
+                }
+
+                val matchingVideosWithPlaylistName = remember(loadedPlaylists, localQuery) {
                     val list = mutableListOf<Pair<StreamInfoItem, String>>()
                     if (localQuery.isNotBlank()) {
                         val q = localQuery.trim().lowercase()
@@ -196,37 +243,62 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
 
                 if (localQuery.isBlank()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Type to search video titles across playlists", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Type to search playlists and videos...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                } else if (allVideosWithPlaylistName.isEmpty()) {
+                } else if (matchingPlaylists.isEmpty() && matchingVideosWithPlaylistName.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No matching videos found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("No matching playlists or videos found", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 320.dp),
+                    LazyColumn(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(allVideosWithPlaylistName) { (item, playlistTitle) ->
-                            val record = watchRecords[item.url]
-                            VideoCardWithRecord(
-                                item = item,
-                                playlistBadge = playlistTitle,
-                                watchRecord = record,
-                                onClick = {
-                                    viewModel.addToHistory(
-                                        SavedVideo(
-                                            url = item.url,
-                                            title = item.name,
-                                            uploader = item.uploaderName ?: "",
-                                            thumbUrl = item.thumbnails?.firstOrNull()?.url ?: ""
+                        if (matchingPlaylists.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Playlists",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                            items(matchingPlaylists) { pl ->
+                                PlaylistTileCard(
+                                    playlistData = pl,
+                                    onClick = { selectedPlaylistUrl = pl.url }
+                                )
+                            }
+                        }
+
+                        if (matchingVideosWithPlaylistName.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Videos",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 12.dp)
+                                )
+                            }
+                            items(matchingVideosWithPlaylistName) { (item, playlistTitle) ->
+                                val record = watchRecords[item.url]
+                                VideoCardWithRecord(
+                                    item = item,
+                                    playlistBadge = playlistTitle,
+                                    watchRecord = record,
+                                    onClick = {
+                                        viewModel.addToHistory(
+                                            SavedVideo(
+                                                url = item.url,
+                                                title = item.name,
+                                                uploader = item.uploaderName ?: "",
+                                                thumbUrl = item.thumbnails?.firstOrNull()?.url ?: ""
+                                            )
                                         )
-                                    )
-                                    playingState = PlayingTarget(item.url, listOf(item.url), 0)
-                                }
-                            )
+                                        playingState = PlayingTarget(item.url, listOf(item.url), 0)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -236,11 +308,17 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
-                } else if (loadedPlaylists.isEmpty()) {
+                } else if (loadedPlaylists.isEmpty() || viewModel.sourcesErrorMessage.value != null) {
+                    val isOffline = !viewModel.isOnline()
+                    val errorMsg = if (isOffline) "You are offline. Please check your internet connection." else (viewModel.sourcesErrorMessage.value ?: "No playlists available")
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("No playlists available")
-                            Spacer(Modifier.height(8.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = errorMsg,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Spacer(Modifier.height(12.dp))
                             Button(onClick = { viewModel.loadSourcesAndPlaylists(forceRefresh = true) }) {
                                 Text("Retry")
                             }
@@ -250,6 +328,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     val playlistsList = loadedPlaylists.values.toList()
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 320.dp),
+                        state = homeGridState,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -263,6 +342,11 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     }
                 }
             }
+
+            PullToRefreshContainer(
+                state = pullToRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
 }
@@ -362,6 +446,9 @@ fun PlaylistTileCard(
 fun PlaylistDetailScreen(
     playlistData: PlaylistData?,
     watchRecords: Map<String, WatchRecord>,
+    gridState: LazyGridState = rememberLazyGridState(),
+    listState: LazyListState = rememberLazyListState(),
+    lastPlayedUrl: String? = null,
     onBack: () -> Unit,
     onVideoSelected: (String, List<String>, Int) -> Unit
 ) {
@@ -386,6 +473,20 @@ fun PlaylistDetailScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            if (!lastPlayedUrl.isNullOrBlank()) {
+                ExtendedFloatingActionButton(
+                    text = { Text("Resume") },
+                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Resume Play") },
+                    onClick = {
+                        val index = videoUrls.indexOf(lastPlayedUrl).coerceAtLeast(0)
+                        onVideoSelected(lastPlayedUrl, if (videoUrls.isNotEmpty()) videoUrls else listOf(lastPlayedUrl), index)
+                    },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -435,6 +536,7 @@ fun PlaylistDetailScreen(
                         // Landscape mode: Grid view fitting 2 videos in a line
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(2),
+                            state = gridState,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(horizontal = 16.dp),
@@ -454,6 +556,7 @@ fun PlaylistDetailScreen(
                     } else {
                         // Portrait mode: Full-width edge-to-edge thumbnails like YouTube app UI
                         LazyColumn(
+                            state = listState,
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
@@ -541,7 +644,7 @@ fun YouTubeStyleVideoItem(
                 val percent = ((watchRecord.positionMs.toFloat() / watchRecord.durationMs.toFloat()) * 100).toInt().coerceIn(0, 100)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (percent >= 90) "Watched" else "$percent% watched",
+                    text = if (percent >= 98) "Watched" else "$percent% watched",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -636,7 +739,7 @@ fun VideoCardWithRecord(
                     val percent = ((watchRecord.positionMs.toFloat() / watchRecord.durationMs.toFloat()) * 100).toInt().coerceIn(0, 100)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = if (percent >= 90) "Watched" else "$percent% watched",
+                        text = if (percent >= 98) "Watched" else "$percent% watched",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -852,7 +955,7 @@ fun CustomisationScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, cont
 }
 
 @Composable
-fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
+fun AboutScreen(onBack: (() -> Unit)? = null, contentPadding: PaddingValues) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val packageInfo = remember {
         try {
@@ -871,13 +974,17 @@ fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(vertical = 16.dp)
-        ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-            Spacer(Modifier.width(8.dp))
-            Text("About", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        if (onBack != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 16.dp)
+            ) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                Spacer(Modifier.width(8.dp))
+                Text("About", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            }
+        } else {
+            Spacer(Modifier.height(16.dp))
         }
 
         Card(
@@ -898,7 +1005,7 @@ fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(16.dp))
-                Divider()
+                HorizontalDivider()
                 Spacer(Modifier.height(16.dp))
                 Text(
                     text = "App Version",
@@ -917,7 +1024,7 @@ fun AboutScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Created by Abs-Asif",
+                    text = "Created by Abdullah Bari Asif",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

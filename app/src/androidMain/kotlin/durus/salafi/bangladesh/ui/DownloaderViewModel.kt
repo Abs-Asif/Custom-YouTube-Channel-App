@@ -182,14 +182,38 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun isOnline(): Boolean {
+        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        if (connectivityManager != null) {
+            val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+            if (capabilities != null) {
+                return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }
+        }
+        return false
+    }
+
     fun loadSourcesAndPlaylists(forceRefresh: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
+            val isDeviceOnline = isOnline()
+            val cached = loadCachedPlaylists()
+
+            if (!isDeviceOnline) {
+                withContext(Dispatchers.Main) {
+                    if (cached != null) {
+                        loadedPlaylists.value = cached
+                    }
+                    isLoadingSources.value = false
+                    sourcesErrorMessage.value = "You are offline. Please check your internet connection."
+                }
+                return@launch
+            }
+
             val lastFetchTime = prefs.getLong("last_sources_fetch_time", 0L)
             val currentTime = System.currentTimeMillis()
             val ONE_HOUR_MS = 60 * 60 * 1000L
 
             if (!forceRefresh && (currentTime - lastFetchTime) < ONE_HOUR_MS) {
-                val cached = loadCachedPlaylists()
                 if (cached != null) {
                     withContext(Dispatchers.Main) {
                         loadedPlaylists.value = cached
@@ -241,11 +265,16 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     )
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    val msg = if (!isOnline() || e is java.net.UnknownHostException || e is java.io.IOException) {
+                        "You are offline. Please check your internet connection."
+                    } else {
+                        e.message ?: "Failed to load playlist"
+                    }
                     playlistsMap[source.url] = PlaylistData(
                         title = source.title ?: "Playlist",
                         url = source.url,
                         isLoading = false,
-                        errorMessage = e.message ?: "Failed to load playlist"
+                        errorMessage = msg
                     )
                 }
 

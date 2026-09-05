@@ -102,6 +102,8 @@ class PlaybackService : MediaSessionService() {
             .setCallback(sessionCallback)
             .setCustomLayout(listOf(rewindButton, forwardButton))
             .build()
+
+        mediaSession?.let { addSession(it) }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {

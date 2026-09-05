@@ -34,12 +34,28 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Request unrestricted background battery usage optimization bypass on startup
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+            if (powerManager != null && !powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
         org.schabi.newpipe.extractor.NewPipe.init(durus.salafi.bangladesh.api.OkHttpDownloader())
         val imageLoader = coil.ImageLoader.Builder(this)
             .components {
                 add(coil.decode.VideoFrameDecoder.Factory())
             }
             .crossfade(true)
+            .respectCacheHeaders(false)
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
                     .maxSizePercent(0.25)
@@ -48,9 +64,11 @@ class MainActivity : ComponentActivity() {
             .diskCache {
                 coil.disk.DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(100 * 1024 * 1024)
+                    .maxSizeBytes(200 * 1024 * 1024)
                     .build()
             }
+            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+            .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
             .build()
         coil.Coil.setImageLoader(imageLoader)
 
