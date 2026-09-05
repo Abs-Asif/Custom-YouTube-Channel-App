@@ -39,9 +39,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import android.app.Activity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
+import kotlinx.coroutines.launch
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
@@ -176,6 +179,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
     var showAbout by rememberSaveable { mutableStateOf(false) }
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
     var videoDownloadTarget by remember { mutableStateOf<VideoDownloadTarget?>(null) }
+    var showExitDialog by rememberSaveable { mutableStateOf(false) }
 
     val homeGridState = rememberLazyGridState()
     val playlistGridStates = remember { mutableMapOf<String, androidx.compose.foundation.lazy.grid.LazyGridState>() }
@@ -186,6 +190,14 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
     val watchRecords by viewModel.watchRecords
     val lastPlayedUrl = viewModel.lastPlayedUrl.value
     var localQuery by viewModel.localSearchQuery
+
+    if (videoDownloadTarget != null) {
+        VideoOptionBottomSheet(
+            target = videoDownloadTarget!!,
+            viewModel = viewModel,
+            onDismiss = { videoDownloadTarget = null }
+        )
+    }
 
     if (playingState != null) {
         PlayerScreen(
@@ -231,7 +243,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             gridState = gridState,
             listState = listState,
             lastPlayedUrl = lastPlayedUrl,
-            onRefresh = { viewModel.loadSourcesAndPlaylists(forceRefresh = true) },
+            onRefresh = { viewModel.refreshPlaylist(playlistUrl) },
             onBack = { selectedPlaylistUrl = null },
             onVideoSelected = { videoUrl, urls, index ->
                 val video = playlistData?.videos?.getOrNull(index)
@@ -261,6 +273,34 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             isSearchActive = false
             localQuery = ""
         }
+    } else if (selectedPlaylistUrl == null && playingState == null && !showAbout) {
+        BackHandler {
+            showExitDialog = true
+        }
+    }
+
+    if (showExitDialog) {
+        val context = LocalContext.current
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { Text("Exit Durūs", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to exit the app?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExitDialog = false
+                        (context as? Activity)?.finish()
+                    }
+                ) {
+                    Text("Exit", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     val pullToRefreshState = rememberPullToRefreshState()
@@ -299,22 +339,30 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                             ),
                             leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
                             },
                             trailingIcon = {
-                                IconButton(onClick = {
-                                    if (localQuery.isNotEmpty()) {
-                                        localQuery = ""
-                                    } else {
-                                        isSearchActive = false
-                                    }
-                                }) {
+                                IconButton(
+                                    onClick = {
+                                        if (localQuery.isNotEmpty()) {
+                                            localQuery = ""
+                                        } else {
+                                            isSearchActive = false
+                                        }
+                                    },
+                                    modifier = Modifier.padding(end = 4.dp)
+                                ) {
                                     Icon(Icons.Default.Close, contentDescription = "Clear Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(end = 8.dp)
+                                .padding(horizontal = 4.dp)
                                 .height(50.dp)
                                 .focusRequester(searchFocusRequester)
                         )
@@ -322,16 +370,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         Text("Durūs", fontWeight = FontWeight.Bold)
                     }
                 },
-                navigationIcon = {
-                    if (isSearchActive) {
-                        IconButton(onClick = {
-                            isSearchActive = false
-                            localQuery = ""
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                },
+                navigationIcon = {},
                 actions = {
                     if (!isSearchActive) {
                         IconButton(onClick = { isSearchActive = true }) {
@@ -345,16 +384,41 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             )
         },
         floatingActionButton = {
-            if (!isSearchActive && !lastPlayedUrl.isNullOrBlank()) {
-                ExtendedFloatingActionButton(
-                    text = { Text("Resume") },
-                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Resume Play") },
-                    onClick = {
-                        playingState = PlayingTarget(lastPlayedUrl, listOf(lastPlayedUrl), 0)
-                    },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            val coroutineScope = rememberCoroutineScope()
+            val showScrollToTop by remember { derivedStateOf { homeGridState.firstVisibleItemIndex > 3 } }
+            val showResume = !isSearchActive && !lastPlayedUrl.isNullOrBlank()
+
+            if (showScrollToTop || showResume) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (showScrollToTop) {
+                        SmallFloatingActionButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    homeGridState.animateScrollToItem(0)
+                                }
+                            },
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ) {
+                            Icon(Icons.Default.ArrowUpward, contentDescription = "Scroll to top")
+                        }
+                    }
+
+                    if (showResume) {
+                        ExtendedFloatingActionButton(
+                            text = { Text("Resume") },
+                            icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Resume Play") },
+                            onClick = {
+                                playingState = PlayingTarget(lastPlayedUrl!!, listOf(lastPlayedUrl), 0)
+                            },
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
             }
         }
     ) { innerPadding ->
@@ -454,14 +518,97 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     }
                 }
             } else {
-                // Home Playlist Tiles Grid
-                if (isLoadingSources && loadedPlaylists.isEmpty()) {
+                val isOffline = !viewModel.isOnline()
+                val downloadedMap by viewModel.downloadedVideos
+
+                if (isOffline) {
+                    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CloudOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "You are offline",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Text(
+                                        text = "Showing your downloaded videos for offline viewing.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+
+                        if (downloadedMap.isEmpty()) {
+                            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "No downloaded videos available",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    Button(onClick = { viewModel.loadSourcesAndPlaylists(forceRefresh = true) }) {
+                                        Text("Retry Connection")
+                                    }
+                                }
+                            }
+                        } else {
+                            val downloadedList = downloadedMap.values.toList()
+                            val downloadedUrls = downloadedList.map { it.url }
+
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 320.dp),
+                                state = homeGridState,
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(downloadedList.size) { idx ->
+                                    val record = downloadedList[idx]
+                                    val streamItem = StreamInfoItem(0, record.url, record.title, org.schabi.newpipe.extractor.stream.StreamType.VIDEO_STREAM).apply {
+                                        if (!record.thumbnailUrl.isNullOrBlank()) {
+                                            thumbnails = listOf(org.schabi.newpipe.extractor.Image(record.thumbnailUrl, 0, 0, org.schabi.newpipe.extractor.Image.ResolutionLevel.UNKNOWN))
+                                        }
+                                    }
+                                    val watchRecord = watchRecords[record.url]
+
+                                    VideoCardWithRecord(
+                                        item = streamItem,
+                                        watchRecord = watchRecord,
+                                        viewModel = viewModel,
+                                        onClick = {
+                                            playingState = PlayingTarget(record.url, downloadedUrls, idx)
+                                        },
+                                        onLongClick = {
+                                            videoDownloadTarget = VideoDownloadTarget(record.url, record.title, record.thumbnailUrl)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (isLoadingSources && loadedPlaylists.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 } else if (loadedPlaylists.isEmpty() || viewModel.sourcesErrorMessage.value != null) {
-                    val isOffline = !viewModel.isOnline()
-                    val errorMsg = if (isOffline) "You are offline. Please check your internet connection." else (viewModel.sourcesErrorMessage.value ?: "No playlists available")
+                    val errorMsg = viewModel.sourcesErrorMessage.value ?: "No playlists available"
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
                             Text(
@@ -476,7 +623,12 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         }
                     }
                 } else {
-                    val playlistsList = loadedPlaylists.values.toList()
+                    val pinnedSet by viewModel.pinnedPlaylists
+                    val allPlaylists = loadedPlaylists.values.toList()
+                    val pinnedPlaylistsList = allPlaylists.filter { pinnedSet.contains(it.url) }
+                    val unpinnedPlaylistsList = allPlaylists.filter { !pinnedSet.contains(it.url) }
+                    val playlistsList = pinnedPlaylistsList + unpinnedPlaylistsList
+
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 320.dp),
                         state = homeGridState,
@@ -487,6 +639,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                         items(playlistsList) { pl ->
                             PlaylistTileCard(
                                 playlistData = pl,
+                                isPinned = pinnedSet.contains(pl.url),
                                 onClick = { selectedPlaylistUrl = pl.url }
                             )
                         }
@@ -500,14 +653,6 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
             )
         }
     }
-
-    if (videoDownloadTarget != null) {
-        VideoOptionBottomSheet(
-            target = videoDownloadTarget!!,
-            viewModel = viewModel,
-            onDismiss = { videoDownloadTarget = null }
-        )
-    }
 }
 
 data class PlayingTarget(
@@ -519,6 +664,7 @@ data class PlayingTarget(
 @Composable
 fun PlaylistTileCard(
     playlistData: PlaylistData,
+    isPinned: Boolean = false,
     onClick: () -> Unit
 ) {
     Card(
@@ -550,6 +696,35 @@ fun PlaylistTileCard(
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
+                    }
+                }
+
+                if (isPinned) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.PushPin,
+                                contentDescription = "Pinned",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "Pinned",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
 
@@ -661,8 +836,16 @@ fun PlaylistDetailScreen(
     onVideoSelected: (String, List<String>, Int) -> Unit,
     onVideoLongClick: ((StreamInfoItem) -> Unit)? = null
 ) {
-    val videos = playlistData?.videos ?: emptyList()
+    val rawVideos = playlistData?.videos ?: emptyList()
+    val pinnedSet by viewModel.pinnedPlaylists
+    val reversedSet by viewModel.reversedPlaylists
+
+    val isPinned = playlistData?.url?.let { pinnedSet.contains(it) } == true
+    val isReversed = playlistData?.url?.let { reversedSet.contains(it) } == true
+
+    val videos = remember(rawVideos, isReversed) { if (isReversed) rawVideos.reversed() else rawVideos }
     val videoUrls = remember(videos) { videos.map { it.url } }
+
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
@@ -692,17 +875,48 @@ fun PlaylistDetailScreen(
             )
         },
         floatingActionButton = {
-            if (!lastPlayedUrl.isNullOrBlank()) {
-                ExtendedFloatingActionButton(
-                    text = { Text("Resume") },
-                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Resume Play") },
-                    onClick = {
-                        val index = videoUrls.indexOf(lastPlayedUrl).coerceAtLeast(0)
-                        onVideoSelected(lastPlayedUrl, if (videoUrls.isNotEmpty()) videoUrls else listOf(lastPlayedUrl), index)
-                    },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            val coroutineScope = rememberCoroutineScope()
+            val showScrollToTop by remember {
+                derivedStateOf {
+                    if (isLandscape) gridState.firstVisibleItemIndex > 3
+                    else listState.firstVisibleItemIndex > 3
+                }
+            }
+            val showResume = !lastPlayedUrl.isNullOrBlank()
+
+            if (showScrollToTop || showResume) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (showScrollToTop) {
+                        SmallFloatingActionButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    if (isLandscape) gridState.animateScrollToItem(0)
+                                    else listState.animateScrollToItem(0)
+                                }
+                            },
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ) {
+                            Icon(Icons.Default.ArrowUpward, contentDescription = "Scroll to top")
+                        }
+                    }
+
+                    if (showResume) {
+                        ExtendedFloatingActionButton(
+                            text = { Text("Resume") },
+                            icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Resume Play") },
+                            onClick = {
+                                val index = videoUrls.indexOf(lastPlayedUrl).coerceAtLeast(0)
+                                onVideoSelected(lastPlayedUrl!!, if (videoUrls.isNotEmpty()) videoUrls else listOf(lastPlayedUrl), index)
+                            },
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
             }
         }
     ) { innerPadding ->
@@ -729,7 +943,7 @@ fun PlaylistDetailScreen(
                         "${videos.size} Videos"
                     }
 
-                    // Header Bar with "Play All" Button
+                    // Header Bar with Icon Play All, Filter/Reverse 🔃, and Pin/Unpin
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -740,20 +954,55 @@ fun PlaylistDetailScreen(
                         Text(
                             text = headerCountText,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
 
-                        Button(
-                            onClick = {
-                                if (videos.isNotEmpty()) {
-                                    onVideoSelected(videos[0].url, videoUrls, 0)
-                                }
-                            },
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Play All")
+                            // 1. Play All button (Icon only)
+                            IconButton(
+                                onClick = {
+                                    if (videos.isNotEmpty()) {
+                                        onVideoSelected(videos[0].url, videoUrls, 0)
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Play All")
+                            }
+
+                            // 2. Filter button (🔃 icon with no text, toggles reversed order)
+                            IconButton(
+                                onClick = {
+                                    playlistData?.url?.let { viewModel.togglePlaylistOrder(it) }
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.Autorenew,
+                                    contentDescription = "Filter / Reverse",
+                                    tint = if (isReversed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // 3. Pin button (text pin/unpin icon button)
+                            FilterChip(
+                                selected = isPinned,
+                                onClick = {
+                                    playlistData?.url?.let { viewModel.togglePinPlaylist(it) }
+                                },
+                                label = { Text(if (isPinned) "Pinned" else "Pin") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.PushPin,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            )
                         }
                     }
 
@@ -837,36 +1086,6 @@ fun YouTubeStyleVideoItem(
                 contentScale = ContentScale.Crop
             )
 
-            val isDownloaded = viewModel?.isDownloaded(item.url) == true
-            if (isDownloaded) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                    shape = RoundedCornerShape(4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = "Downloaded",
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
             if (item.duration > 0) {
                 val minutes = item.duration / 60
                 val seconds = item.duration % 60
@@ -910,14 +1129,51 @@ fun YouTubeStyleVideoItem(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (watchRecord != null && watchRecord.durationMs > 0) {
-                val percent = ((watchRecord.positionMs.toFloat() / watchRecord.durationMs.toFloat()) * 100).toInt().coerceIn(0, 100)
+            val isDownloaded = viewModel?.isDownloaded(item.url) == true
+            val hasWatched = watchRecord != null && watchRecord.durationMs > 0
+
+            if (isDownloaded || hasWatched) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (percent >= 98) "Watched" else "$percent% watched",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isDownloaded) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "Downloaded",
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    if (hasWatched) {
+                        val percent = ((watchRecord!!.positionMs.toFloat() / watchRecord.durationMs.toFloat()) * 100).toInt().coerceIn(0, 100)
+                        Text(
+                            text = if (percent >= 98) "Watched" else "$percent% watched",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
     }
@@ -1012,14 +1268,51 @@ fun VideoCardWithRecord(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                if (watchRecord != null && watchRecord.durationMs > 0) {
-                    val percent = ((watchRecord.positionMs.toFloat() / watchRecord.durationMs.toFloat()) * 100).toInt().coerceIn(0, 100)
+                val isDownloaded = viewModel?.isDownloaded(item.url) == true
+                val hasWatched = watchRecord != null && watchRecord.durationMs > 0
+
+                if (isDownloaded || hasWatched) {
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (percent >= 98) "Watched" else "$percent% watched",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (isDownloaded) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "Downloaded",
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        if (hasWatched) {
+                            val percent = ((watchRecord!!.positionMs.toFloat() / watchRecord.durationMs.toFloat()) * 100).toInt().coerceIn(0, 100)
+                            Text(
+                                text = if (percent >= 98) "Watched" else "$percent% watched",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1061,6 +1354,7 @@ fun SettingsTab(viewModel: DownloaderViewModel, contentPadding: PaddingValues = 
         when (screen) {
             "Main" -> SettingsMainList(onNavigate = { currentScreen = it }, contentPadding = contentPadding)
             "Customisation" -> CustomisationScreen(viewModel, onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
+            "Storage" -> StorageScreen(viewModel, onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
             "About" -> AboutScreen(onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
         }
     }
@@ -1152,6 +1446,13 @@ fun SettingsMainList(onNavigate: (String) -> Unit, contentPadding: PaddingValues
                 onClick = { onNavigate("Customisation") }
             )
             SettingsListItem(
+                icon = Icons.Default.FolderDelete,
+                iconColor = Color(0xFF8B5A4C),
+                title = "Storage & Downloads",
+                subtitle = "Clear downloaded videos & cache",
+                onClick = { onNavigate("Storage") }
+            )
+            SettingsListItem(
                 icon = Icons.Default.Info,
                 iconColor = Color(0xFF4C6B8B),
                 title = "About",
@@ -1177,6 +1478,108 @@ fun SettingsMainList(onNavigate: (String) -> Unit, contentPadding: PaddingValues
                 onClick = {}
             )
         }
+    }
+}
+
+fun formatByteSize(bytes: Long): String {
+    if (bytes <= 0) return "0 MB"
+    val mb = bytes.toDouble() / (1024 * 1024)
+    return if (mb >= 1024) {
+        val gb = mb / 1024
+        "%.2f GB".format(gb)
+    } else {
+        "%.1f MB".format(mb)
+    }
+}
+
+@Composable
+fun StorageScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, contentPadding: PaddingValues) {
+    var downloadedSize by remember { mutableLongStateOf(viewModel.getDownloadedVideosSize()) }
+    var imageCacheSize by remember { mutableLongStateOf(viewModel.getImageCacheSize()) }
+    var showClearDownloadsDialog by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 16.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+            Spacer(Modifier.width(8.dp))
+            Text("Storage & Downloads", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+
+        Card(shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("App Storage Usage", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Downloaded Videos:", style = MaterialTheme.typography.bodyLarge)
+                    Text(formatByteSize(downloadedSize), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Thumbnail Image Cache:", style = MaterialTheme.typography.bodyLarge)
+                    Text(formatByteSize(imageCacheSize), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
+
+                HorizontalDivider()
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Total Cache & Storage:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(formatByteSize(downloadedSize + imageCacheSize), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+
+        Button(
+            onClick = { showClearDownloadsDialog = true },
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.Delete, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Clear Downloads", fontWeight = FontWeight.Bold)
+        }
+
+        OutlinedButton(
+            onClick = {
+                viewModel.clearImageCache()
+                imageCacheSize = viewModel.getImageCacheSize()
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.CleaningServices, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Clear Thumbnail Cache")
+        }
+    }
+
+    if (showClearDownloadsDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDownloadsDialog = false },
+            title = { Text("Clear All Downloads", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to delete all downloaded videos at once? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearAllDownloads()
+                        downloadedSize = viewModel.getDownloadedVideosSize()
+                        showClearDownloadsDialog = false
+                    }
+                ) {
+                    Text("Delete All", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDownloadsDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -1308,13 +1711,19 @@ fun AboutScreen(onBack: (() -> Unit)? = null, contentPadding: PaddingValues) {
                 Spacer(Modifier.height(20.dp))
                 Button(
                     onClick = {
-                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                            data = android.net.Uri.parse("https://wa.link/n7blpl")
+                        val url = "https://wa.link/n7blpl"
+                        val whatsappIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                            setPackage("com.whatsapp")
                         }
                         try {
-                            context.startActivity(intent)
+                            context.startActivity(whatsappIntent)
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            try {
+                                val fallbackIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                context.startActivity(fallbackIntent)
+                            } catch (ex: Exception) {
+                                ex.printStackTrace()
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),

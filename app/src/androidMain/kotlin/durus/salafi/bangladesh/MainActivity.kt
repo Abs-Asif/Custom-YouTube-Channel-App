@@ -49,6 +49,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        durus.salafi.bangladesh.util.NotificationReceiver.markAppOpenedToday(this)
+        durus.salafi.bangladesh.util.NotificationReceiver.scheduleDailyReminders(this)
+
         org.schabi.newpipe.extractor.NewPipe.init(durus.salafi.bangladesh.api.OkHttpDownloader())
         val imageLoader = coil.ImageLoader.Builder(this)
             .components {

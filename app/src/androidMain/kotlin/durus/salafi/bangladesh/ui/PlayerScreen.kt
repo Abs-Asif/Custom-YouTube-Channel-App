@@ -140,8 +140,29 @@ fun PlayerScreen(
         }
     }
 
-    BackHandler {
+    val handleBack = {
+        try {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         onBack()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    BackHandler {
+        handleBack()
     }
 
     // Load video stream when currentVideoUrl changes unless already playing this stream
@@ -318,7 +339,7 @@ fun PlayerScreen(
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                        IconButton(onClick = handleBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                     }
                 )
             }
@@ -610,109 +631,135 @@ fun PlayerScreen(
                     }
 
                     if (!hideUi) {
-                        val titleText = streamExtractor?.name
-                            ?: viewModel.downloadedVideos.value[currentVideoUrl]?.title
+                        val downloadedMap by viewModel.downloadedVideos
+                        val historyList by viewModel.history
+                        val loadedMap by viewModel.loadedPlaylists
 
-                        if (titleText != null) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(titleText, style = MaterialTheme.typography.titleLarge)
+                        val resolvedTitle = remember(streamExtractor, currentVideoUrl, downloadedMap, historyList, loadedMap) {
+                            streamExtractor?.name
+                                ?: downloadedMap[currentVideoUrl]?.title
+                                ?: historyList.firstOrNull { it.url == currentVideoUrl }?.title
+                                ?: loadedMap.values.flatMap { it.videos }.firstOrNull { it.url == currentVideoUrl }?.name
+                                ?: "Video"
+                        }
 
-                                if (playlistUrls.isNotEmpty()) {
-                                    Spacer(Modifier.height(16.dp))
-                                    Text(
-                                        "Playlist Videos",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(Modifier.height(8.dp))
+                        val matchedPlaylist = remember(currentVideoUrl, loadedMap) {
+                            loadedMap.values.firstOrNull { pl -> pl.videos.any { it.url == currentVideoUrl } }
+                        }
 
-                                    // Find current loaded playlist data from viewModel
-                                    val currentPlaylistData = viewModel.loadedPlaylists.value.values.firstOrNull { pl ->
-                                        pl.videos.map { it.url } == playlistUrls
-                                    }
+                        val effectivePlaylistUrls = remember(playlistUrls, matchedPlaylist, currentVideoUrl) {
+                            if (playlistUrls.size > 1) {
+                                playlistUrls
+                            } else if (matchedPlaylist != null) {
+                                matchedPlaylist.videos.map { it.url }
+                            } else {
+                                playlistUrls
+                            }
+                        }
 
-                                    LazyColumn(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        items(playlistUrls.size) { idx ->
-                                            val itemUrl = playlistUrls[idx]
-                                            val videoItem = currentPlaylistData?.videos?.getOrNull(idx)
-                                            val isSelected = idx == currentIndex
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(resolvedTitle, style = MaterialTheme.typography.titleLarge)
 
-                                            val itemTitle = videoItem?.name ?: if (isSelected && titleText != null) titleText else "Video ${idx + 1}"
-                                            val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(videoItem?.thumbnails)
-                                                ?: streamExtractor?.thumbnails?.firstOrNull()?.url.takeIf { isSelected }
+                            if (effectivePlaylistUrls.isNotEmpty()) {
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    "Playlist Videos",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(8.dp))
 
-                                            val durationText = if (videoItem != null && videoItem.duration > 0) {
-                                                val mins = videoItem.duration / 60
-                                                val secs = videoItem.duration % 60
-                                                "%d:%02d".format(mins, secs)
-                                            } else null
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(effectivePlaylistUrls.size) { idx ->
+                                        val itemUrl = effectivePlaylistUrls[idx]
+                                        val isSelected = itemUrl == currentVideoUrl || (effectivePlaylistUrls.size == playlistUrls.size && idx == currentIndex)
 
-                                            Surface(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable { currentIndex = idx },
-                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                        val itemVideo = matchedPlaylist?.videos?.firstOrNull { it.url == itemUrl }
+                                            ?: loadedMap.values.flatMap { it.videos }.firstOrNull { it.url == itemUrl }
+                                        val historyVideo = historyList.firstOrNull { it.url == itemUrl }
+                                        val downloadedRecord = downloadedMap[itemUrl]
+
+                                        val itemTitle = itemVideo?.name
+                                            ?: historyVideo?.title
+                                            ?: downloadedRecord?.title
+                                            ?: if (isSelected) resolvedTitle else "Video ${idx + 1}"
+
+                                        val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(itemVideo?.thumbnails)
+                                            ?: historyVideo?.thumbUrl
+                                            ?: downloadedRecord?.thumbnailUrl
+                                            ?: streamExtractor?.thumbnails?.firstOrNull()?.url.takeIf { isSelected }
+
+                                        val durationText = if (itemVideo != null && itemVideo.duration > 0) {
+                                            val mins = itemVideo.duration / 60
+                                            val secs = itemVideo.duration % 60
+                                            "%d:%02d".format(mins, secs)
+                                        } else null
+
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { currentIndex = idx },
+                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Row(
-                                                    modifier = Modifier.padding(8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
+                                                Box(
+                                                    modifier = Modifier
+                                                        .width(100.dp)
+                                                        .aspectRatio(16f / 9f)
+                                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                                        .background(MaterialTheme.colorScheme.surfaceVariant)
                                                 ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .width(100.dp)
-                                                            .aspectRatio(16f / 9f)
-                                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                                                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                    ) {
-                                                        if (thumbUrl != null) {
-                                                            AsyncImage(
-                                                                model = thumbUrl,
-                                                                contentDescription = null,
-                                                                modifier = Modifier.fillMaxSize(),
-                                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                    if (thumbUrl != null) {
+                                                        AsyncImage(
+                                                            model = thumbUrl,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                        )
+                                                    }
+                                                    if (durationText != null) {
+                                                        Surface(
+                                                            modifier = Modifier
+                                                                .align(Alignment.BottomEnd)
+                                                                .padding(4.dp),
+                                                            color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
+                                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = durationText,
+                                                                color = androidx.compose.ui.graphics.Color.White,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                                             )
-                                                        }
-                                                        if (durationText != null) {
-                                                            Surface(
-                                                                modifier = Modifier
-                                                                    .align(Alignment.BottomEnd)
-                                                                    .padding(4.dp),
-                                                                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
-                                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
-                                                            ) {
-                                                                Text(
-                                                                    text = durationText,
-                                                                    color = androidx.compose.ui.graphics.Color.White,
-                                                                    style = MaterialTheme.typography.labelSmall,
-                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                                )
-                                                            }
                                                         }
                                                     }
-                                                    Spacer(Modifier.width(12.dp))
-                                                    Column(modifier = Modifier.weight(1f)) {
+                                                }
+                                                Spacer(Modifier.width(12.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = itemTitle,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                                                        maxLines = 2,
+                                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    if (isSelected) {
                                                         Text(
-                                                            text = itemTitle,
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                            fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                                                            maxLines = 2,
-                                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                                            text = "Now Playing",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.primary
                                                         )
-                                                        if (isSelected) {
-                                                            Text(
-                                                                text = "Now Playing",
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                color = MaterialTheme.colorScheme.primary
-                                                            )
-                                                        }
                                                     }
                                                 }
                                             }
