@@ -96,9 +96,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     // Local Search Query
     val localSearchQuery = mutableStateOf("")
 
-    // Pinned Playlists & Reversed Order
+    // Pinned Playlists, Reversed Order & Bottom Playlists
     val pinnedPlaylists = mutableStateOf<Set<String>>(emptySet())
     val reversedPlaylists = mutableStateOf<Set<String>>(emptySet())
+    val completedBottomPlaylists = mutableStateOf<Set<String>>(emptySet())
 
     // Watch Records
     val watchRecords = mutableStateOf<Map<String, WatchRecord>>(emptyMap())
@@ -121,10 +122,24 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         try {
             pinnedPlaylists.value = prefs.getStringSet("pinned_playlists_set", emptySet()) ?: emptySet()
             reversedPlaylists.value = prefs.getStringSet("reversed_playlists_set", emptySet()) ?: emptySet()
+            completedBottomPlaylists.value = prefs.getStringSet("completed_bottom_playlists_set", emptySet()) ?: emptySet()
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
+
+    fun sendPlaylistToBottom(url: String) {
+        val current = completedBottomPlaylists.value.toMutableSet()
+        current.add(url)
+        completedBottomPlaylists.value = current
+        try {
+            prefs.edit().putStringSet("completed_bottom_playlists_set", current).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun isPlaylistInBottom(url: String): Boolean = completedBottomPlaylists.value.contains(url)
 
     fun togglePinPlaylist(url: String) {
         val current = pinnedPlaylists.value.toMutableSet()
@@ -268,6 +283,47 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         executeDownloadTask(videoUrl, title, thumbnailUrl, attempts = 0)
     }
 
+    private fun showDownloadNotification(notificationId: Int, title: String, progress: Int, isFinished: Boolean, isFailed: Boolean) {
+        val context = getApplication<Application>()
+        val channelId = "download_channel"
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                "Video Downloads",
+                android.app.NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows video download progress"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle(title)
+            .setOngoing(!isFinished && !isFailed)
+
+        if (isFinished) {
+            builder.setContentText("Download complete")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setProgress(0, 0, false)
+        } else if (isFailed) {
+            builder.setContentText("Download failed")
+                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setProgress(0, 0, false)
+        } else {
+            builder.setContentText("$progress%")
+                .setProgress(100, progress, false)
+        }
+
+        try {
+            notificationManager.notify(notificationId, builder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun executeDownloadTask(
         videoUrl: String,
         title: String,
@@ -348,12 +404,14 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                             var read: Int
                             var downloadedBytes = 0L
 
+                            var lastNotifiedProgress = -1
                             while (input.read(buffer).also { read = it } != -1) {
                                 output.write(buffer, 0, read)
                                 downloadedBytes += read
 
                                 if (totalBytes > 0) {
                                     val prog = (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                                    val percent = (prog * 100).toInt()
                                     withContext(Dispatchers.Main) {
                                         val map = activeDownloads.value.toMutableMap()
                                         val cur = map[videoUrl]
@@ -362,12 +420,17 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                                             activeDownloads.value = map
                                         }
                                     }
+                                    if (percent != lastNotifiedProgress && percent % 5 == 0) {
+                                        lastNotifiedProgress = percent
+                                        showDownloadNotification(videoUrl.hashCode(), title, percent, isFinished = false, isFailed = false)
+                                    }
                                 }
                             }
                         }
                     }
 
                     // Download completed successfully
+                    showDownloadNotification(videoUrl.hashCode(), title, 100, isFinished = true, isFailed = false)
                     withContext(Dispatchers.Main) {
                         val record = DownloadedVideoRecord(
                             url = videoUrl,
@@ -411,6 +474,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             // If we reached maxRetries without success:
+            showDownloadNotification(videoUrl.hashCode(), title, 0, isFinished = false, isFailed = true)
             withContext(Dispatchers.Main) {
                 val map = activeDownloads.value.toMutableMap()
                 map[videoUrl] = DownloadProgressState(
@@ -631,9 +695,14 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
                     var page: org.schabi.newpipe.extractor.Page? = plInfo.nextPage
                     while (org.schabi.newpipe.extractor.Page.isValid(page)) {
-                        val moreItems = PlaylistInfo.getMoreItems(service, source.url, page)
-                        items.addAll(moreItems.items.filterIsInstance<StreamInfoItem>())
-                        page = moreItems.nextPage
+                        try {
+                            val moreItems = PlaylistInfo.getMoreItems(service, source.url, page)
+                            items.addAll(moreItems.items.filterIsInstance<StreamInfoItem>())
+                            page = moreItems.nextPage
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            break
+                        }
                     }
 
                     val plTitle = source.title?.takeIf { it.isNotBlank() } ?: plInfo.name ?: "Playlist"
@@ -721,9 +790,14 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
                 var page: org.schabi.newpipe.extractor.Page? = plInfo.nextPage
                 while (org.schabi.newpipe.extractor.Page.isValid(page)) {
-                    val moreItems = PlaylistInfo.getMoreItems(service, playlistUrl, page)
-                    items.addAll(moreItems.items.filterIsInstance<StreamInfoItem>())
-                    page = moreItems.nextPage
+                    try {
+                        val moreItems = PlaylistInfo.getMoreItems(service, playlistUrl, page)
+                        items.addAll(moreItems.items.filterIsInstance<StreamInfoItem>())
+                        page = moreItems.nextPage
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        break
+                    }
                 }
 
                 val plTitle = plInfo.name ?: "Playlist"
