@@ -36,3 +36,13 @@ data class WatchRecord(
     val durationMs: Long,
     val lastUpdated: Long = System.currentTimeMillis()
 )
+
+@Serializable
+data class AdItem(
+    val title: String? = null,
+    val headline: String,
+    val description: String,
+    val imageUrl: String,
+    val affiliateUrl: String,
+    val connectedPlaylistUrl: String
+)

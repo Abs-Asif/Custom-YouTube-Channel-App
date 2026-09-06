@@ -25,6 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import durus.salafi.bangladesh.model.AdItem
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -86,6 +91,9 @@ fun PlayerScreen(
     var showDownloadOptionSheet by remember { mutableStateOf(false) }
     var showPlaylistCompletionDialog by remember { mutableStateOf(false) }
     var completedPlaylistUrl by remember { mutableStateOf<String?>(null) }
+
+    // Ad Popup state
+    var activeAdForPopup by remember { mutableStateOf<AdItem?>(null) }
 
     val exoPlayer = remember(context) { durus.salafi.bangladesh.service.PlaybackService.getOrCreatePlayer(context) }
 
@@ -668,8 +676,67 @@ fun PlayerScreen(
                             }
                         }
 
+                        // Find connected ad for the playlist
+                        val connectedAd = remember(matchedPlaylist, viewModel.adsList.value) {
+                            val playlistUrl = matchedPlaylist?.url
+                            if (playlistUrl != null) {
+                                viewModel.adsList.value.firstOrNull { it.connectedPlaylistUrl == playlistUrl }
+                            } else null
+                        }
+
+                        // Check watch records count for videos in this playlist
+                        LaunchedEffect(currentVideoUrl, matchedPlaylist, connectedAd, viewModel.watchRecords.value) {
+                            if (connectedAd != null && matchedPlaylist != null) {
+                                val adKey = "${connectedAd.connectedPlaylistUrl}_${connectedAd.affiliateUrl}"
+                                if (!viewModel.isAdPopupShown(adKey)) {
+                                    val watchedCount = matchedPlaylist.videos.count { v ->
+                                        val rec = viewModel.watchRecords.value[v.url]
+                                        if (rec != null && rec.durationMs > 0) {
+                                            (rec.positionMs.toFloat() / rec.durationMs.toFloat()) >= 0.97f
+                                        } else false
+                                    }
+                                    if (watchedCount >= 2) {
+                                        activeAdForPopup = connectedAd
+                                    }
+                                }
+                            }
+                        }
+
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text(resolvedTitle, style = MaterialTheme.typography.titleLarge)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    resolvedTitle,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                if (connectedAd != null) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(
+                                        onClick = {
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(connectedAd.affiliateUrl))
+                                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary
+                                        ),
+                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = "বইটি কিনুন",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
 
                             if (effectivePlaylistUrls.isNotEmpty()) {
                                 Spacer(Modifier.height(16.dp))
@@ -794,6 +861,116 @@ fun PlayerScreen(
             ),
             viewModel = viewModel,
             onDismiss = { showDownloadOptionSheet = false }
+        )
+    }
+
+    if (activeAdForPopup != null) {
+        val ad = activeAdForPopup!!
+        val adKey = "${ad.connectedPlaylistUrl}_${ad.affiliateUrl}"
+
+        // Mark ad popup as shown so it appears only once automatically
+        LaunchedEffect(adKey) {
+            viewModel.markAdPopupShown(adKey)
+        }
+
+        AlertDialog(
+            onDismissRequest = { activeAdForPopup = null },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false
+            ),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(16.dp),
+            confirmButton = {},
+            dismissButton = {},
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Top header: Ad headline on top (big) + 'X' close button on top right
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = ad.headline,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        IconButton(
+                            onClick = { activeAdForPopup = null },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Ad image
+                    if (ad.imageUrl.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            AsyncImage(
+                                model = ad.imageUrl,
+                                contentDescription = ad.headline,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    // Affiliate link button (Buy now / "বইটি কিনুন", highlighted)
+                    Button(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(ad.affiliateUrl))
+                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "বইটি কিনুন",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Ad description
+                    Text(
+                        text = ad.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         )
     }
 

@@ -1059,6 +1059,55 @@ fun PlaylistDetailScreen(
                         }
                     }
 
+                    val connectedAd = remember(playlistData, viewModel.adsList.value) {
+                        val playlistUrl = playlistData?.url
+                        if (playlistUrl != null) {
+                            viewModel.adsList.value.firstOrNull { it.connectedPlaylistUrl == playlistUrl }
+                        } else null
+                    }
+
+                    if (connectedAd != null) {
+                        val context = LocalContext.current
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = connectedAd.headline,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(connectedAd.affiliateUrl))
+                                        try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("বইটি কিনুন", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
+                        }
+                    }
+
                     if (isLandscape) {
                         // Landscape mode: Grid view fitting 2 videos in a line
                         LazyVerticalGrid(
