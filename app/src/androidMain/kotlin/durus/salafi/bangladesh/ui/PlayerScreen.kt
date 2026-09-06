@@ -84,6 +84,8 @@ fun PlayerScreen(
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
     var showDownloadOptionSheet by remember { mutableStateOf(false) }
+    var showPlaylistCompletionDialog by remember { mutableStateOf(false) }
+    var completedPlaylistUrl by remember { mutableStateOf<String?>(null) }
 
     val exoPlayer = remember(context) { durus.salafi.bangladesh.service.PlaybackService.getOrCreatePlayer(context) }
 
@@ -118,6 +120,15 @@ fun PlayerScreen(
                     // Serial playback: auto advance if more videos in playlist
                     if (playlistUrls.isNotEmpty() && currentIndex + 1 < playlistUrls.size) {
                         currentIndex++
+                    } else if (playlistUrls.isNotEmpty() && currentIndex + 1 >= playlistUrls.size) {
+                        // Check if user finished the last video of a playlist
+                        val matchedPl = viewModel.loadedPlaylists.value.values.firstOrNull { pl ->
+                            pl.videos.any { it.url == currentVideoUrl }
+                        }
+                        if (matchedPl != null && !viewModel.isPlaylistInBottom(matchedPl.url)) {
+                            completedPlaylistUrl = matchedPl.url
+                            showPlaylistCompletionDialog = true
+                        }
                     }
                 }
             }
@@ -783,6 +794,29 @@ fun PlayerScreen(
             ),
             viewModel = viewModel,
             onDismiss = { showDownloadOptionSheet = false }
+        )
+    }
+
+    if (showPlaylistCompletionDialog && completedPlaylistUrl != null) {
+        AlertDialog(
+            onDismissRequest = { showPlaylistCompletionDialog = false },
+            title = { Text("প্লেলিস্ট সম্পূর্ণ হয়েছে", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            text = { Text("আপনি এই প্লেলিস্টের সব ভিডিও দেখা সম্পন্ন করেছেন। আপনি কি চান এই প্লেলিস্টটি নিচে পাঠিয়ে দেওয়া হোক?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        completedPlaylistUrl?.let { viewModel.sendPlaylistToBottom(it) }
+                        showPlaylistCompletionDialog = false
+                    }
+                ) {
+                    Text("হ্যাঁ", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPlaylistCompletionDialog = false }) {
+                    Text("না")
+                }
+            }
         )
     }
 

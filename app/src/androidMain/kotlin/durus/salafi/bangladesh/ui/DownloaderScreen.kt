@@ -224,7 +224,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                 )
             }
         ) { innerPadding ->
-            AboutScreen(onBack = null, contentPadding = innerPadding)
+            AboutScreen(viewModel = viewModel, onBack = null, contentPadding = innerPadding)
         }
         return
     }
@@ -362,7 +362,7 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 4.dp)
+                                .padding(end = 12.dp)
                                 .height(50.dp)
                                 .focusRequester(searchFocusRequester)
                         )
@@ -624,10 +624,12 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                     }
                 } else {
                     val pinnedSet by viewModel.pinnedPlaylists
+                    val bottomSet by viewModel.completedBottomPlaylists
                     val allPlaylists = loadedPlaylists.values.toList()
-                    val pinnedPlaylistsList = allPlaylists.filter { pinnedSet.contains(it.url) }
-                    val unpinnedPlaylistsList = allPlaylists.filter { !pinnedSet.contains(it.url) }
-                    val playlistsList = pinnedPlaylistsList + unpinnedPlaylistsList
+                    val pinnedPlaylistsList = allPlaylists.filter { pinnedSet.contains(it.url) && !bottomSet.contains(it.url) }
+                    val normalPlaylistsList = allPlaylists.filter { !pinnedSet.contains(it.url) && !bottomSet.contains(it.url) }
+                    val bottomPlaylistsList = allPlaylists.filter { bottomSet.contains(it.url) }
+                    val playlistsList = pinnedPlaylistsList + normalPlaylistsList + bottomPlaylistsList
 
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 320.dp),
@@ -651,6 +653,60 @@ fun DownloaderScreen(viewModel: DownloaderViewModel) {
                 state = pullToRefreshState,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
+
+            // Global persistent download progress bar at bottom of screen
+            val activeDownloads by viewModel.activeDownloads
+            val activeDownloadingItem = remember(activeDownloads) {
+                activeDownloads.values.firstOrNull { it.isDownloading }
+            }
+
+            if (activeDownloadingItem != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shadowElevation = 8.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (activeDownloadingItem.isPausedOffline) "Download Paused (Offline)"
+                                       else activeDownloadingItem.errorMessage ?: "Downloading... ${(activeDownloadingItem.progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (activeDownloadingItem.attempts > 1) {
+                                Text(
+                                    text = "Attempt ${activeDownloadingItem.attempts}/9",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { activeDownloadingItem.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -988,21 +1044,18 @@ fun PlaylistDetailScreen(
                                 )
                             }
 
-                            // 3. Pin button (text pin/unpin icon button)
-                            FilterChip(
-                                selected = isPinned,
+                            // 3. Pin button (Icon only, matching other buttons)
+                            IconButton(
                                 onClick = {
                                     playlistData?.url?.let { viewModel.togglePinPlaylist(it) }
-                                },
-                                label = { Text(if (isPinned) "Pinned" else "Pin") },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.PushPin,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
                                 }
-                            )
+                            ) {
+                                Icon(
+                                    Icons.Default.PushPin,
+                                    contentDescription = "Pin / Unpin",
+                                    tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
 
@@ -1355,7 +1408,7 @@ fun SettingsTab(viewModel: DownloaderViewModel, contentPadding: PaddingValues = 
             "Main" -> SettingsMainList(onNavigate = { currentScreen = it }, contentPadding = contentPadding)
             "Customisation" -> CustomisationScreen(viewModel, onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
             "Storage" -> StorageScreen(viewModel, onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
-            "About" -> AboutScreen(onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
+            "About" -> AboutScreen(viewModel = viewModel, onBack = { currentScreen = "Main" }, contentPadding = contentPadding)
         }
     }
 }
@@ -1635,8 +1688,11 @@ fun CustomisationScreen(viewModel: DownloaderViewModel, onBack: () -> Unit, cont
 }
 
 @Composable
-fun AboutScreen(onBack: (() -> Unit)? = null, contentPadding: PaddingValues) {
+fun AboutScreen(viewModel: DownloaderViewModel? = null, onBack: (() -> Unit)? = null, contentPadding: PaddingValues = PaddingValues(0.dp)) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var downloadedSize by remember { mutableLongStateOf(viewModel?.getDownloadedVideosSize() ?: 0L) }
+    var imageCacheSize by remember { mutableLongStateOf(viewModel?.getImageCacheSize() ?: 0L) }
+    var showClearCacheDialog by remember { mutableStateOf(false) }
     val packageInfo = remember {
         try {
             context.packageManager.getPackageInfo(context.packageName, 0)
@@ -1684,6 +1740,84 @@ fun AboutScreen(onBack: (() -> Unit)? = null, contentPadding: PaddingValues) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (viewModel != null) {
+                    val loadedMap by viewModel.loadedPlaylists
+                    val totalPlaylists = loadedMap.size
+                    val totalVideos = loadedMap.values.sumOf { it.videos.size }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "Library Statistics",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "$totalPlaylists Playlists • $totalVideos Videos",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Messenger: https://m.me/abdullahbariasif
+                    IconButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://m.me/abdullahbariasif"))
+                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Chat,
+                            contentDescription = "Messenger",
+                            tint = Color(0xFF0084FF)
+                        )
+                    }
+
+                    // WhatsApp: https://wa.me/abdullahbariasif
+                    IconButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://wa.me/abdullahbariasif"))
+                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PhoneInTalk,
+                            contentDescription = "WhatsApp",
+                            tint = Color(0xFF25D366)
+                        )
+                    }
+
+                    // E-mail: mailto:contact@abdullah.ami.bd
+                    IconButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:contact@abdullah.ami.bd"))
+                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Email,
+                            contentDescription = "E-mail",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    // Phone: tel:+8809638250306
+                    IconButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:+8809638250306"))
+                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Call,
+                            contentDescription = "Phone",
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(16.dp))
@@ -1708,6 +1842,19 @@ fun AboutScreen(onBack: (() -> Unit)? = null, contentPadding: PaddingValues) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (viewModel != null) {
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedButton(
+                        onClick = { showClearCacheDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.CleaningServices, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Clear Cache & Downloads (${formatByteSize(downloadedSize + imageCacheSize)})", fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 Spacer(Modifier.height(20.dp))
                 Button(
                     onClick = {
@@ -1738,5 +1885,31 @@ fun AboutScreen(onBack: (() -> Unit)? = null, contentPadding: PaddingValues) {
                 }
             }
         }
+    }
+
+    if (showClearCacheDialog && viewModel != null) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = { Text("Clear Cache & Downloads", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to delete all downloaded videos and cached thumbnails at once?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearAllDownloads()
+                        viewModel.clearImageCache()
+                        downloadedSize = viewModel.getDownloadedVideosSize()
+                        imageCacheSize = viewModel.getImageCacheSize()
+                        showClearCacheDialog = false
+                    }
+                ) {
+                    Text("Delete All", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

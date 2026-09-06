@@ -27,6 +27,8 @@
 
 # NewPipe Extractor & Nanojson rules
 -keep class org.schabi.newpipe.** { *; }
+-keepclassmembers class org.schabi.newpipe.** { *; }
 -dontwarn org.schabi.newpipe.**
 -keep class com.grack.nanojson.** { *; }
+-keepclassmembers class com.grack.nanojson.** { *; }
 -dontwarn com.grack.nanojson.**
