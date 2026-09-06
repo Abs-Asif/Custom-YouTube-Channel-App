@@ -10,6 +10,7 @@ import durus.salafi.bangladesh.ui.theme.AppTheme
 import durus.salafi.bangladesh.model.SavedVideo
 import durus.salafi.bangladesh.model.PlaylistSource
 import durus.salafi.bangladesh.model.WatchRecord
+import durus.salafi.bangladesh.model.AdItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -87,9 +88,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     val bookmarks = mutableStateOf<Map<String, List<SavedVideo>>>(mapOf("Watch Later" to emptyList()))
     val lastPlayedUrl = mutableStateOf<String?>(null)
 
-    // Playlists & Sources
+    // Playlists & Sources & Ads
     val playlistSources = mutableStateOf<List<PlaylistSource>>(emptyList())
     val loadedPlaylists = mutableStateOf<Map<String, PlaylistData>>(emptyMap())
+    val adsList = mutableStateOf<List<AdItem>>(emptyList())
+    val shownAdPopups = mutableStateOf<Set<String>>(emptySet())
     val isLoadingSources = mutableStateOf(false)
     val sourcesErrorMessage = mutableStateOf<String?>(null)
 
@@ -114,9 +117,31 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         loadWatchRecords()
         loadDownloadedVideos()
         loadPinnedAndReversedPlaylists()
+        loadShownAdPopups()
         loadSourcesAndPlaylists()
         observeNetworkChanges()
     }
+
+    private fun loadShownAdPopups() {
+        try {
+            shownAdPopups.value = prefs.getStringSet("shown_ad_popups_set", emptySet()) ?: emptySet()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun markAdPopupShown(adKey: String) {
+        val current = shownAdPopups.value.toMutableSet()
+        current.add(adKey)
+        shownAdPopups.value = current
+        try {
+            prefs.edit().putStringSet("shown_ad_popups_set", current).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun isAdPopupShown(adKey: String): Boolean = shownAdPopups.value.contains(adKey)
 
     private fun loadPinnedAndReversedPlaylists() {
         try {
@@ -667,8 +692,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             val sources = fetchSourcesJson()
+            val fetchedAds = fetchAdsJson()
             withContext(Dispatchers.Main) {
                 playlistSources.value = sources
+                adsList.value = fetchedAds
             }
 
             val playlistsMap = loadedPlaylists.value.toMutableMap()
@@ -833,6 +860,49 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
         }
+    }
+
+    private fun fetchAdsJson(): List<AdItem> {
+        val urls = listOf(
+            "https://raw.githubusercontent.com/Abs-Asif/Custom-YouTube-Channel-App/main/ads.json",
+            "https://github.com/Abs-Asif/Custom-YouTube-Channel-App/raw/main/ads.json",
+            "https://raw.githubusercontent.com/Abs-Asif/Custom-YouTube-Channel-App/master/ads.json"
+        )
+        for (url in urls) {
+            try {
+                val request = Request.Builder().url(url).build()
+                val response = okHttpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string()
+                    if (!bodyStr.isNullOrBlank()) {
+                        val ads = Json.decodeFromString<List<AdItem>>(bodyStr)
+                        prefs.edit().putString("cached_ads_json", bodyStr).apply()
+                        return ads
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        // Try local cache or fallback
+        try {
+            val cachedStr = prefs.getString("cached_ads_json", null)
+            if (!cachedStr.isNullOrBlank()) {
+                return Json.decodeFromString<List<AdItem>>(cachedStr)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return listOf(
+            AdItem(
+                title = "কাশফুশ শুবুহাত",
+                headline = "কাশফুশ শুবুহাত বইটি কিনুন",
+                description = "“এই বইটা আপনাকে শেখাবে\n\n১. তাওহীদ কাকে বলে, কেমন হলে তা বিশুদ্ধ হয়\n২. শির্ক কোথা থেকে আসে, কোন কাজে তা হয়ে যেতে পারে\n৩. ‘লা ইলাহা ইল্লাল্লাহ’ বললেই কি যথেষ্ট? নাকি আছে আরো শর্ত?\n৪. আধুনিক যুগের কিছু ছদ্মবেশী শির্ক যেগুলো আপনি ‘ইসলামিক’ ভাবেন\n৫. রাসূল (সা.) কিভাবে শির্ক দূর করতেন কোরআন ও হাদীসের আলোকে বিশ্লেষণ।”",
+                imageUrl = "https://ikhlasstore.com/wp-content/uploads/2025/04/WhatsApp-Image-2025-04-06-at-4.18.01-PM-1.jpeg",
+                affiliateUrl = "https://rkmri.co/l2E2oSeNeAEp/",
+                connectedPlaylistUrl = "https://m.youtube.com/playlist?list=PLBSd9V2aTA3Yqn1lhxbOcB2J66Cr18cTt"
+            )
+        )
     }
 
     private fun fetchSourcesJson(): List<PlaylistSource> {
