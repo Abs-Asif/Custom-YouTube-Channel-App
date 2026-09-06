@@ -703,40 +703,11 @@ fun PlayerScreen(
                         }
 
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    resolvedTitle,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                if (connectedAd != null) {
-                                    Spacer(Modifier.width(8.dp))
-                                    Button(
-                                        onClick = {
-                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(connectedAd.affiliateUrl))
-                                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary
-                                        ),
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            text = "বইটি কিনুন",
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
+                            Text(
+                                resolvedTitle,
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
                             if (effectivePlaylistUrls.isNotEmpty()) {
                                 Spacer(Modifier.height(16.dp))
@@ -885,14 +856,13 @@ fun PlayerScreen(
             dismissButton = {},
             text = {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Top header: Ad headline on top (big) + 'X' close button on top right
+                    // Top header: Ad headline on top (big) + 'X' close button on top right (fixed, non-scrolling)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top
                     ) {
@@ -917,58 +887,67 @@ fun PlayerScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    // Internally scrollable content area
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Ad image (un-cropped, actual size)
+                        if (ad.imageUrl.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AsyncImage(
+                                    model = ad.imageUrl,
+                                    contentDescription = ad.headline,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .wrapContentHeight(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                )
+                            }
+                            Spacer(Modifier.height(16.dp))
+                        }
 
-                    // Ad image
-                    if (ad.imageUrl.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                        // Affiliate link button (Buy now / "বইটি কিনুন", highlighted)
+                        Button(
+                            onClick = {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(ad.affiliateUrl))
+                                try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
-                            AsyncImage(
-                                model = ad.imageUrl,
-                                contentDescription = ad.headline,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "বইটি কিনুন",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                             )
                         }
-                        Spacer(Modifier.height(16.dp))
-                    }
 
-                    // Affiliate link button (Buy now / "বইটি কিনুন", highlighted)
-                    Button(
-                        onClick = {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(ad.affiliateUrl))
-                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        ),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        Icon(Icons.Default.ShoppingCart, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.height(16.dp))
+
+                        // Ad description
                         Text(
-                            text = "বইটি কিনুন",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            text = ad.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    // Ad description
-                    Text(
-                        text = ad.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
         )

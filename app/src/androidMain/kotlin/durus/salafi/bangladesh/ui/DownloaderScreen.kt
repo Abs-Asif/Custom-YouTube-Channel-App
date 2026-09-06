@@ -43,6 +43,7 @@ import android.app.Activity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.focus.FocusRequester
 import kotlinx.coroutines.launch
 import androidx.compose.ui.focus.focusRequester
@@ -812,7 +813,7 @@ fun PlaylistTileCard(
             }
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
-                    text = playlistData.title,
+                    text = playlistData.title.replace("\r", "").replace("\n", " ").replace(Regex("\\s+"), " ").trim(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
@@ -918,9 +919,11 @@ fun PlaylistDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        playlistData?.title ?: "Playlist",
+                        text = (playlistData?.title ?: "Playlist").replace("\r", "").replace("\n", " ").replace(Regex("\\s+"), " ").trim(),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 navigationIcon = {
@@ -1772,16 +1775,18 @@ fun AboutScreen(viewModel: DownloaderViewModel? = null, onBack: (() -> Unit)? = 
             Spacer(Modifier.height(16.dp))
         }
 
+        // Section 1: App Info Header
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
         ) {
             Column(Modifier.padding(20.dp)) {
                 Text(
                     text = "Durūs",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -1789,151 +1794,248 @@ fun AboutScreen(viewModel: DownloaderViewModel? = null, onBack: (() -> Unit)? = 
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (viewModel != null) {
-                    val loadedMap by viewModel.loadedPlaylists
-                    val totalPlaylists = loadedMap.size
-                    val totalVideos = loadedMap.values.sumOf { it.videos.size }
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "Library Statistics",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "$totalPlaylists Playlists • $totalVideos Videos",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider()
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Messenger: https://m.me/abdullahbariasif
-                    IconButton(
-                        onClick = {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://m.me/abdullahbariasif"))
-                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Chat,
-                            contentDescription = "Messenger",
-                            tint = Color(0xFF0084FF)
+                    Column {
+                        Text(
+                            text = "Version",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = versionName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Creator",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Abdullah Bari Asif",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
 
-                    // WhatsApp: https://wa.me/abdullahbariasif
+        // Section 2: Library Statistics (if available)
+        if (viewModel != null) {
+            val loadedMap by viewModel.loadedPlaylists
+            val totalPlaylists = loadedMap.size
+            val totalVideos = loadedMap.values.sumOf { it.videos.size }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                Column(Modifier.padding(20.dp)) {
+                    Text(
+                        text = "Library Statistics",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$totalPlaylists",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Playlists",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$totalVideos",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Videos",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 3: Contact & Social
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text(
+                    text = "Contact & Feedback",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // WhatsApp with actual icon
                     IconButton(
                         onClick = {
                             val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://wa.me/abdullahbariasif"))
                             try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
-                        }
+                        },
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PhoneInTalk,
+                            painter = painterResource(id = durus.salafi.bangladesh.R.drawable.ic_whatsapp),
                             contentDescription = "WhatsApp",
-                            tint = Color(0xFF25D366)
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(36.dp)
                         )
                     }
 
-                    // E-mail: mailto:contact@abdullah.ami.bd
+                    // Messenger with actual icon
+                    IconButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://m.me/abdullahbariasif"))
+                            try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
+                        },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = durus.salafi.bangladesh.R.drawable.ic_messenger),
+                            contentDescription = "Messenger",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    // E-mail
                     IconButton(
                         onClick = {
                             val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:contact@abdullah.ami.bd"))
                             try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
-                        }
+                        },
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Email,
-                            contentDescription = "E-mail",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Email,
+                                    contentDescription = "E-mail",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
                     }
 
-                    // Phone: tel:+8809638250306
+                    // Phone
                     IconButton(
                         onClick = {
                             val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:+8809638250306"))
                             try { context.startActivity(intent) } catch (e: Exception) { e.printStackTrace() }
-                        }
+                        },
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Phone",
-                            tint = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "App Version",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = versionName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "Creator Credit",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Created by Abdullah Bari Asif",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (viewModel != null) {
-                    Spacer(Modifier.height(16.dp))
-                    OutlinedButton(
-                        onClick = { showClearCacheDialog = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Default.CleaningServices, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Clear Cache & Downloads (${formatByteSize(downloadedSize + imageCacheSize)})", fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(Modifier.height(20.dp))
-                Button(
-                    onClick = {
-                        val url = "https://wa.link/n7blpl"
-                        val whatsappIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
-                            setPackage("com.whatsapp")
-                        }
-                        try {
-                            context.startActivity(whatsappIntent)
-                        } catch (e: Exception) {
-                            try {
-                                val fallbackIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                                context.startActivity(fallbackIntent)
-                            } catch (ex: Exception) {
-                                ex.printStackTrace()
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Call,
+                                    contentDescription = "Phone",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
                             }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Submit New playlists",
-                        fontWeight = FontWeight.Bold
-                    )
+                    }
                 }
             }
         }
+
+        // Section 4: Action Buttons
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = {
+                    val url = "https://wa.link/n7blpl"
+                    val whatsappIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                        setPackage("com.whatsapp")
+                    }
+                    try {
+                        context.startActivity(whatsappIntent)
+                    } catch (e: Exception) {
+                        try {
+                            val fallbackIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                            context.startActivity(fallbackIntent)
+                        } catch (ex: Exception) {
+                            ex.printStackTrace()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(
+                    painter = painterResource(id = durus.salafi.bangladesh.R.drawable.ic_whatsapp),
+                    contentDescription = null,
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Submit New Playlists",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (viewModel != null) {
+                OutlinedButton(
+                    onClick = { showClearCacheDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.CleaningServices, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Clear Cache & Downloads (${formatByteSize(downloadedSize + imageCacheSize)})", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
     }
 
     if (showClearCacheDialog && viewModel != null) {
