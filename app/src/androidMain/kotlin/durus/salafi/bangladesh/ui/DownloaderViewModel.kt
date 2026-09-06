@@ -64,6 +64,10 @@ data class CachedPlaylist(
     val videos: List<SimpleVideoItem> = emptyList()
 )
 
+fun cleanSingleLineTitle(title: String): String {
+    return title.replace("\r", "").replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+}
+
 data class PlaylistData(
     val title: String,
     val url: String,
@@ -605,7 +609,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     item
                 }
                 resultMap[cp.url] = PlaylistData(
-                    title = cp.title,
+                    title = cleanSingleLineTitle(cp.title),
                     url = cp.url,
                     thumbnailUrl = cp.thumbnailUrl,
                     videoCount = cp.videoCount,
@@ -706,7 +710,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 }
 
                 playlistsMap[source.url] = PlaylistData(
-                    title = source.title ?: "Playlist",
+                    title = cleanSingleLineTitle(source.title ?: "Playlist"),
                     url = source.url,
                     isLoading = true
                 )
@@ -732,7 +736,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     }
 
-                    val plTitle = source.title?.takeIf { it.isNotBlank() } ?: plInfo.name ?: "Playlist"
+                    val plTitle = cleanSingleLineTitle(source.title?.takeIf { it.isNotBlank() } ?: plInfo.name ?: "Playlist")
                     val thumb = getBestThumbnailUrl(plInfo.thumbnails) ?: items.firstOrNull()?.let { getBestThumbnailUrl(it.thumbnails) }
 
                     playlistsMap[source.url] = PlaylistData(
@@ -827,7 +831,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
 
-                val plTitle = plInfo.name ?: "Playlist"
+                val plTitle = cleanSingleLineTitle(plInfo.name ?: "Playlist")
                 val thumb = getBestThumbnailUrl(plInfo.thumbnails) ?: items.firstOrNull()?.let { getBestThumbnailUrl(it.thumbnails) }
 
                 val updatedData = PlaylistData(
@@ -918,7 +922,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 if (response.isSuccessful) {
                     val bodyStr = response.body?.string()
                     if (!bodyStr.isNullOrBlank()) {
-                        return Json.decodeFromString<List<PlaylistSource>>(bodyStr)
+                        val parsed = Json.decodeFromString<List<PlaylistSource>>(bodyStr)
+                        return parsed.map { ps ->
+                            ps.copy(title = ps.title?.let { cleanSingleLineTitle(it) })
+                        }
                     }
                 }
             } catch (e: Exception) {
