@@ -27,7 +27,15 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.foundation.rememberScrollState
+import durus.salafi.bangladesh.util.AiSummaryUtils
+import kotlinx.coroutines.launch
+import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.widget.Toast
 import androidx.compose.foundation.verticalScroll
 import durus.salafi.bangladesh.model.AdItem
 import androidx.compose.foundation.lazy.LazyColumn
@@ -94,6 +102,55 @@ fun PlayerScreen(
 
     // Ad Popup state
     var activeAdForPopup by remember { mutableStateOf<AdItem?>(null) }
+
+    // AI Summary state
+    var showAiSummarySheet by remember { mutableStateOf(false) }
+    var isAiSummaryLoading by remember { mutableStateOf(false) }
+    var aiSummaryResult by remember { mutableStateOf<String?>(null) }
+    var aiSummaryError by remember { mutableStateOf<String?>(null) }
+    var summaryVideoUrl by remember { mutableStateOf<String?>(null) }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    fun triggerAiSummary() {
+        if (summaryVideoUrl == currentVideoUrl && (aiSummaryResult != null || isAiSummaryLoading)) {
+            return
+        }
+        summaryVideoUrl = currentVideoUrl
+        isAiSummaryLoading = true
+        aiSummaryResult = null
+        aiSummaryError = null
+
+        coroutineScope.launch {
+            val subStream = AiSummaryUtils.getBengaliSubtitleStream(currentVideoUrl, streamExtractor)
+            if (subStream == null) {
+                isAiSummaryLoading = false
+                aiSummaryError = "এই ভিডিওটির জন্য কোনো বাংলা ক্যাপশন পাওয়া যায়নি।"
+                return@launch
+            }
+
+            val cleanedText = AiSummaryUtils.fetchAndCleanSubtitle(subStream)
+            if (cleanedText.isBlank()) {
+                isAiSummaryLoading = false
+                aiSummaryError = "ভিডিও ক্যাপশন সংগ্রহ করা সম্ভব হয়নি বা এতে কোনো প্রয়োজনীয় লেখা পাওয়া যায়নি।"
+                return@launch
+            }
+
+            val res = AiSummaryUtils.generateAiSummary(cleanedText)
+            isAiSummaryLoading = false
+            res.onSuccess { summary ->
+                aiSummaryResult = summary
+            }.onFailure { err ->
+                aiSummaryError = err.message ?: "সারসংক্ষেপ তৈরি করতে সমস্যা হয়েছে।"
+            }
+        }
+    }
+
+    LaunchedEffect(showAiSummarySheet, currentVideoUrl) {
+        if (showAiSummarySheet) {
+            triggerAiSummary()
+        }
+    }
 
     val exoPlayer = remember(context) { durus.salafi.bangladesh.service.PlaybackService.getOrCreatePlayer(context) }
 
@@ -423,6 +480,16 @@ fun PlayerScreen(
                                     )
                                 }
 
+                                IconButton(onClick = {
+                                    showAiSummarySheet = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = "AI Summary",
+                                        tint = if (showAiSummarySheet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+
                             if (playlistUrls.size > 1) {
                                 IconButton(
                                     onClick = { if (currentIndex + 1 < playlistUrls.size) currentIndex++ },
@@ -702,114 +769,236 @@ fun PlayerScreen(
                             }
                         }
 
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                resolvedTitle,
-                                style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            if (effectivePlaylistUrls.isNotEmpty()) {
-                                Spacer(Modifier.height(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    "Playlist Videos",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    resolvedTitle,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                                Spacer(Modifier.height(8.dp))
 
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(effectivePlaylistUrls.size) { idx ->
-                                        val itemUrl = effectivePlaylistUrls[idx]
-                                        val isSelected = itemUrl == currentVideoUrl || (effectivePlaylistUrls.size == playlistUrls.size && idx == currentIndex)
+                                if (effectivePlaylistUrls.isNotEmpty()) {
+                                    Spacer(Modifier.height(16.dp))
+                                    Text(
+                                        "Playlist Videos",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
 
-                                        val itemVideo = matchedPlaylist?.videos?.firstOrNull { it.url == itemUrl }
-                                            ?: loadedMap.values.flatMap { it.videos }.firstOrNull { it.url == itemUrl }
-                                        val historyVideo = historyList.firstOrNull { it.url == itemUrl }
-                                        val downloadedRecord = downloadedMap[itemUrl]
+                                    LazyColumn(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(effectivePlaylistUrls.size) { idx ->
+                                            val itemUrl = effectivePlaylistUrls[idx]
+                                            val isSelected = itemUrl == currentVideoUrl || (effectivePlaylistUrls.size == playlistUrls.size && idx == currentIndex)
 
-                                        val itemTitle = itemVideo?.name
-                                            ?: historyVideo?.title
-                                            ?: downloadedRecord?.title
-                                            ?: if (isSelected) resolvedTitle else "Video ${idx + 1}"
+                                            val itemVideo = matchedPlaylist?.videos?.firstOrNull { it.url == itemUrl }
+                                                ?: loadedMap.values.flatMap { it.videos }.firstOrNull { it.url == itemUrl }
+                                            val historyVideo = historyList.firstOrNull { it.url == itemUrl }
+                                            val downloadedRecord = downloadedMap[itemUrl]
 
-                                        val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(itemVideo?.thumbnails)
-                                            ?: historyVideo?.thumbUrl
-                                            ?: downloadedRecord?.thumbnailUrl
-                                            ?: streamExtractor?.thumbnails?.firstOrNull()?.url.takeIf { isSelected }
+                                            val itemTitle = itemVideo?.name
+                                                ?: historyVideo?.title
+                                                ?: downloadedRecord?.title
+                                                ?: if (isSelected) resolvedTitle else "Video ${idx + 1}"
 
-                                        val durationText = if (itemVideo != null && itemVideo.duration > 0) {
-                                            val mins = itemVideo.duration / 60
-                                            val secs = itemVideo.duration % 60
-                                            "%d:%02d".format(mins, secs)
-                                        } else null
+                                            val thumbUrl = durus.salafi.bangladesh.util.getBestThumbnailUrl(itemVideo?.thumbnails)
+                                                ?: historyVideo?.thumbUrl
+                                                ?: downloadedRecord?.thumbnailUrl
+                                                ?: streamExtractor?.thumbnails?.firstOrNull()?.url.takeIf { isSelected }
 
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { currentIndex = idx },
-                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
+                                            val durationText = if (itemVideo != null && itemVideo.duration > 0) {
+                                                val mins = itemVideo.duration / 60
+                                                val secs = itemVideo.duration % 60
+                                                "%d:%02d".format(mins, secs)
+                                            } else null
+
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { currentIndex = idx },
+                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                                             ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .width(100.dp)
-                                                        .aspectRatio(16f / 9f)
-                                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                Row(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    if (thumbUrl != null) {
-                                                        AsyncImage(
-                                                            model = thumbUrl,
-                                                            contentDescription = null,
-                                                            modifier = Modifier.fillMaxSize(),
-                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                                        )
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .width(100.dp)
+                                                            .aspectRatio(16f / 9f)
+                                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                    ) {
+                                                        if (thumbUrl != null) {
+                                                            AsyncImage(
+                                                                model = thumbUrl,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                            )
+                                                        }
+                                                        if (durationText != null) {
+                                                            Surface(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.BottomEnd)
+                                                                    .padding(4.dp),
+                                                                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
+                                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = durationText,
+                                                                    color = androidx.compose.ui.graphics.Color.White,
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                )
+                                                            }
+                                                        }
                                                     }
-                                                    if (durationText != null) {
-                                                        Surface(
-                                                            modifier = Modifier
-                                                                .align(Alignment.BottomEnd)
-                                                                .padding(4.dp),
-                                                            color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
-                                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
-                                                        ) {
+                                                    Spacer(Modifier.width(12.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = itemTitle,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                                                            maxLines = 2,
+                                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        if (isSelected) {
                                                             Text(
-                                                                text = durationText,
-                                                                color = androidx.compose.ui.graphics.Color.White,
+                                                                text = "Now Playing",
                                                                 style = MaterialTheme.typography.labelSmall,
-                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                color = MaterialTheme.colorScheme.primary
                                                             )
                                                         }
                                                     }
                                                 }
-                                                Spacer(Modifier.width(12.dp))
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        text = itemTitle,
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                                                        maxLines = 2,
-                                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    if (isSelected) {
-                                                        Text(
-                                                            text = "Now Playing",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.primary
-                                                        )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (showAiSummarySheet) {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .align(Alignment.BottomCenter),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 16.dp,
+                                    shadowElevation = 16.dp,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(16.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    Icons.Default.AutoAwesome,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                    "এআই সারসংক্ষেপ",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (aiSummaryResult != null) {
+                                                    IconButton(onClick = {
+                                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                                        val clip = ClipData.newPlainText("AI Summary", aiSummaryResult)
+                                                        clipboard?.setPrimaryClip(clip)
+                                                        Toast.makeText(context, "সারসংক্ষেপ কপি করা হয়েছে", Toast.LENGTH_SHORT).show()
+                                                    }) {
+                                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
                                                     }
+                                                }
+                                                IconButton(onClick = { showAiSummarySheet = false }) {
+                                                    Icon(Icons.Default.Close, contentDescription = "Close")
+                                                }
+                                            }
+                                        }
+
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxWidth(),
+                                            contentAlignment = Alignment.TopStart
+                                        ) {
+                                            if (isAiSummaryLoading) {
+                                                Column(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.Center
+                                                ) {
+                                                    CircularProgressIndicator()
+                                                    Spacer(Modifier.height(16.dp))
+                                                    Text(
+                                                        "বাংলা ক্যাপশন সংগ্রহ ও এআই সারসংক্ষেপ তৈরি হচ্ছে...",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                    )
+                                                }
+                                            } else if (aiSummaryError != null) {
+                                                Column(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .verticalScroll(rememberScrollState()),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.Center
+                                                ) {
+                                                    Text(
+                                                        aiSummaryError!!,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.error,
+                                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                    )
+                                                    Spacer(Modifier.height(16.dp))
+                                                    Button(onClick = {
+                                                        summaryVideoUrl = null
+                                                        triggerAiSummary()
+                                                    }) {
+                                                        Text("পুনরায় চেষ্টা করুন")
+                                                    }
+                                                }
+                                            } else if (aiSummaryResult != null) {
+                                                Column(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .verticalScroll(rememberScrollState())
+                                                ) {
+                                                    Text(
+                                                        text = aiSummaryResult!!,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
                                                 }
                                             }
                                         }
