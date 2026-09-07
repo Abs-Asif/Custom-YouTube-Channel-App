@@ -126,7 +126,8 @@ object AiSummaryUtils {
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
             val endpoints = listOf(
-                "https://text.pollinations.ai/openai/chat/completions"
+                "https://text.pollinations.ai/openai/chat/completions",
+                "https://text.pollinations.ai/openai"
             )
             val models = listOf("openai", "openai-fast")
 
