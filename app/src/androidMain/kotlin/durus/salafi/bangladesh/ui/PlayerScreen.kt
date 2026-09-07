@@ -11,8 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.Headset
-import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.SkipNext
@@ -402,8 +400,6 @@ fun PlayerScreen(
         }
     }
 
-    var isMusicMode by remember { mutableStateOf(false) }
-
     Scaffold(
         topBar = {
             if (!hideUi) {
@@ -459,17 +455,7 @@ fun PlayerScreen(
                                 }
                             }
 
-                            IconButton(onClick = {
-                                isMusicMode = !isMusicMode
-                            }) {
-                                Icon(
-                                    if (isMusicMode) Icons.Default.Headset else Icons.Default.HeadsetOff, 
-                                    "Music Mode", 
-                                    tint = if (isMusicMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-
-                                val isDownloaded = viewModel.isDownloaded(currentVideoUrl)
+                            val isDownloaded = viewModel.isDownloaded(currentVideoUrl)
                                 IconButton(onClick = {
                                     showDownloadOptionSheet = true
                                 }) {
@@ -534,167 +520,66 @@ fun PlayerScreen(
                         }
                     }
                 } else {
-                    if (!isMusicMode) {
-                        val playerModifier = if (isFullscreen || isInPipMode) {
-                            Modifier.fillMaxSize()
-                        } else {
-                            Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                        }
+                    val playerModifier = if (isFullscreen || isInPipMode) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                    }
 
-                        Surface(
-                            modifier = playerModifier,
-                            color = androidx.compose.ui.graphics.Color.Black,
-                            shadowElevation = if (isFullscreen || isInPipMode) 0.dp else 12.dp
-                        ) {
-                            AndroidView(
-                                factory = { ctx ->
-                                    val viewLayout = android.view.LayoutInflater.from(ctx).inflate(durus.salafi.bangladesh.R.layout.player_view_layout, null) as PlayerView
-                                    viewLayout.apply {
-                                        player = exoPlayer
-                                        useController = !isInPipMode
-                                        layoutParams = android.widget.FrameLayout.LayoutParams(
-                                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
-                                        )
-                                        setFullscreenButtonClickListener { isFullScreenMode ->
-                                            isFullscreen = isFullScreenMode
+                    Surface(
+                        modifier = playerModifier,
+                        color = androidx.compose.ui.graphics.Color.Black,
+                        shadowElevation = if (isFullscreen || isInPipMode) 0.dp else 12.dp
+                    ) {
+                        AndroidView(
+                            factory = { ctx ->
+                                val viewLayout = android.view.LayoutInflater.from(ctx).inflate(durus.salafi.bangladesh.R.layout.player_view_layout, null) as PlayerView
+                                viewLayout.apply {
+                                    player = exoPlayer
+                                    useController = !isInPipMode
+                                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                                    )
+                                    setFullscreenButtonClickListener { isFullScreenMode ->
+                                        isFullscreen = isFullScreenMode
+                                        val act = context as? Activity
+                                        if (isFullScreenMode) {
+                                            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                        } else {
+                                            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                        }
+                                    }
+
+                                    val gestureDetector = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
+                                        override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
+                                            val newFullscreen = !isFullscreen
+                                            isFullscreen = newFullscreen
                                             val act = context as? Activity
-                                            if (isFullScreenMode) {
+                                            if (newFullscreen) {
                                                 act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                                             } else {
                                                 act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                             }
+                                            return true
                                         }
-
-                                        val gestureDetector = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
-                                            override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
-                                                val newFullscreen = !isFullscreen
-                                                isFullscreen = newFullscreen
-                                                val act = context as? Activity
-                                                if (newFullscreen) {
-                                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                                                } else {
-                                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                                }
-                                                return true
-                                            }
-                                        })
-                                        setOnTouchListener { _, event ->
-                                            gestureDetector.onTouchEvent(event)
-                                            false
-                                        }
-                                    }
-                                },
-                                update = { viewLayout ->
-                                    viewLayout.useController = !isInPipMode
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    } else {
-                        val musicModifier = if (isFullscreen || isInPipMode) {
-                            Modifier.fillMaxSize()
-                        } else {
-                            Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                        }
-
-                        val thumbnailUrl = streamExtractor?.thumbnails?.firstOrNull()?.url
-                            ?: viewModel.downloadedVideos.value[currentVideoUrl]?.thumbnailUrl
-
-                        Surface(
-                            modifier = musicModifier,
-                            color = androidx.compose.ui.graphics.Color.Black,
-                            shadowElevation = if (isFullscreen || isInPipMode) 0.dp else 12.dp
-                        ) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                if (!thumbnailUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = thumbnailUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .blur(32.dp),
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                    )
-                                    Surface(
-                                        modifier = Modifier.fillMaxSize(),
-                                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)
-                                    ) {}
-                                }
-
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.9f)
-                                        .padding(12.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-                                    ),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Headset,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(40.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                        Spacer(Modifier.height(8.dp))
-
-                                        val posMinutes = (currentPosition / 1000) / 60
-                                        val posSeconds = (currentPosition / 1000) % 60
-                                        val durMinutes = (totalDuration / 1000) / 60
-                                        val durSeconds = (totalDuration / 1000) % 60
-                                        val timeText = "%d:%02d / %d:%02d".format(posMinutes, posSeconds, durMinutes, durSeconds)
-
-                                        if (totalDuration > 0) {
-                                            Slider(
-                                                value = currentPosition.toFloat(),
-                                                onValueChange = { newPos ->
-                                                    exoPlayer.seekTo(newPos.toLong())
-                                                },
-                                                valueRange = 0f..totalDuration.toFloat(),
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                            Text(
-                                                timeText,
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-
-                                        Spacer(Modifier.height(8.dp))
-                                        FilledIconButton(
-                                            onClick = {
-                                                if (exoPlayer.isPlaying) {
-                                                    exoPlayer.pause()
-                                                } else {
-                                                    exoPlayer.play()
-                                                }
-                                            },
-                                            modifier = Modifier.size(48.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                                contentDescription = if (isPlaying) "Pause" else "Play",
-                                                modifier = Modifier.size(28.dp)
-                                            )
-                                        }
+                                    })
+                                    setOnTouchListener { _, event ->
+                                        gestureDetector.onTouchEvent(event)
+                                        false
                                     }
                                 }
-                            }
-                        }
+                            },
+                            update = { viewLayout ->
+                                viewLayout.useController = !isInPipMode
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                     
-                    if (isFullscreen && !isMusicMode) {
+                    if (isFullscreen) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             Surface(
                                 shape = androidx.compose.foundation.shape.CircleShape,

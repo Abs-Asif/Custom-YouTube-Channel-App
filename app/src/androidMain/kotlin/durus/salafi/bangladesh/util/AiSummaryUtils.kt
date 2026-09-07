@@ -53,6 +53,7 @@ object AiSummaryUtils {
                 if (contentUrl.isNullOrBlank()) return@withContext ""
                 val request = Request.Builder().url(contentUrl).build()
                 val response = client.newCall(request).execute()
+                if (!response.isSuccessful) return@withContext ""
                 val rawText = response.body?.string() ?: ""
                 cleanSubtitleText(rawText)
             } catch (e: Exception) {
@@ -138,8 +139,7 @@ object AiSummaryUtils {
             val body = jsonBody.toString().toRequestBody(mediaType)
 
             val endpoints = listOf(
-                "https://www.omniroute.online/v1/chat/completions",
-                "https://omniroute.online/v1/chat/completions"
+                "https://text.pollinations.ai/openai/chat/completions"
             )
 
             var lastError: Exception? = null
@@ -150,13 +150,16 @@ object AiSummaryUtils {
                         .url(endpoint)
                         .post(body)
                         .addHeader("Content-Type", "application/json")
-                        .addHeader("Authorization", "Bearer omniroute")
                         .build()
 
                     val response = client.newCall(request).execute()
                     val responseStr = response.body?.string() ?: ""
 
-                    if (response.isSuccessful && responseStr.isNotBlank()) {
+                    val trimmedResponse = responseStr.trim()
+                    val isHtml = trimmedResponse.startsWith("<html", ignoreCase = true) ||
+                            trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true)
+
+                    if (response.isSuccessful && !isHtml && responseStr.isNotBlank()) {
                         val json = JSONObject(responseStr)
                         val choices = json.optJSONArray("choices")
                         if (choices != null && choices.length() > 0) {
@@ -168,7 +171,12 @@ object AiSummaryUtils {
                             }
                         }
                     } else {
-                        lastError = Exception("HTTP ${response.code}: $responseStr")
+                        val cleanErrorMsg = if (isHtml || !response.isSuccessful) {
+                            "সারসংক্ষেপ সার্ভারে সমস্যা হয়েছে (HTTP ${response.code})। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+                        } else {
+                            "সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"
+                        }
+                        lastError = Exception(cleanErrorMsg)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
