@@ -8,7 +8,6 @@ Durūs is an open-source, lightweight, distraction-free Islamic video learning c
 - YouTube-style video list layout inside playlists with full edge-to-edge thumbnails in portrait and 2-column grid in landscape
 - Integrated compact video selector in player screen under channel name
 - Dark theme and Rose app styling by default
-- Audio-only mode with playback controls
 - Watch progress tracking and history
 - About page with app version and creator credit
 
