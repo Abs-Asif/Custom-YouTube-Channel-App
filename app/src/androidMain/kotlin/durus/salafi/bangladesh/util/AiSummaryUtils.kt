@@ -124,63 +124,66 @@ object AiSummaryUtils {
 
             val prompt = "অনুগ্রহ করে নিচের বাংলা ভিডিও ক্যাপশনটি থেকে প্রধান গুরুত্বপূর্ণ পয়েন্টগুলো সংক্ষেপে ও সহজ ভাষায় বুলেট পয়েন্ট আকারে বাংলায় সারসংক্ষেপ (Summary) তৈরি করে দাও:\n\n$truncatedText"
 
-            val jsonBody = JSONObject().apply {
-                put("model", "auto")
-                val messagesArray = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", prompt)
-                    })
-                }
-                put("messages", messagesArray)
-            }
-
             val mediaType = "application/json; charset=utf-8".toMediaType()
-            val body = jsonBody.toString().toRequestBody(mediaType)
-
             val endpoints = listOf(
                 "https://text.pollinations.ai/openai/chat/completions"
             )
+            val models = listOf("openai", "openai-fast")
 
             var lastError: Exception? = null
 
-            for (endpoint in endpoints) {
-                try {
-                    val request = Request.Builder()
-                        .url(endpoint)
-                        .post(body)
-                        .addHeader("Content-Type", "application/json")
-                        .build()
-
-                    val response = client.newCall(request).execute()
-                    val responseStr = response.body?.string() ?: ""
-
-                    val trimmedResponse = responseStr.trim()
-                    val isHtml = trimmedResponse.startsWith("<html", ignoreCase = true) ||
-                            trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true)
-
-                    if (response.isSuccessful && !isHtml && responseStr.isNotBlank()) {
-                        val json = JSONObject(responseStr)
-                        val choices = json.optJSONArray("choices")
-                        if (choices != null && choices.length() > 0) {
-                            val firstChoice = choices.getJSONObject(0)
-                            val messageObj = firstChoice.optJSONObject("message")
-                            val content = messageObj?.optString("content")
-                            if (!content.isNullOrBlank()) {
-                                return@withContext Result.success(content.trim())
-                            }
-                        }
-                    } else {
-                        val cleanErrorMsg = if (isHtml || !response.isSuccessful) {
-                            "সারসংক্ষেপ সার্ভারে সমস্যা হয়েছে (HTTP ${response.code})। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
-                        } else {
-                            "সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"
-                        }
-                        lastError = Exception(cleanErrorMsg)
+            for (model in models) {
+                val jsonBody = JSONObject().apply {
+                    put("model", model)
+                    val messagesArray = JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("role", "user")
+                            put("content", prompt)
+                        })
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    lastError = e
+                    put("messages", messagesArray)
+                }
+
+                val body = jsonBody.toString().toRequestBody(mediaType)
+
+                for (endpoint in endpoints) {
+                    try {
+                        val request = Request.Builder()
+                            .url(endpoint)
+                            .post(body)
+                            .addHeader("Content-Type", "application/json")
+                            .build()
+
+                        val response = client.newCall(request).execute()
+                        val responseStr = response.body?.string() ?: ""
+
+                        val trimmedResponse = responseStr.trim()
+                        val isHtml = trimmedResponse.startsWith("<html", ignoreCase = true) ||
+                                trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true)
+
+                        if (response.isSuccessful && !isHtml && responseStr.isNotBlank()) {
+                            val json = JSONObject(responseStr)
+                            val choices = json.optJSONArray("choices")
+                            if (choices != null && choices.length() > 0) {
+                                val firstChoice = choices.getJSONObject(0)
+                                val messageObj = firstChoice.optJSONObject("message")
+                                val content = messageObj?.optString("content")
+                                if (!content.isNullOrBlank()) {
+                                    return@withContext Result.success(content.trim())
+                                }
+                            }
+                        } else {
+                            val cleanErrorMsg = if (isHtml || !response.isSuccessful) {
+                                "সারসংক্ষেপ সার্ভারে সমস্যা হয়েছে (HTTP ${response.code})। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+                            } else {
+                                "সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"
+                            }
+                            lastError = Exception(cleanErrorMsg)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        lastError = e
+                    }
                 }
             }
 
