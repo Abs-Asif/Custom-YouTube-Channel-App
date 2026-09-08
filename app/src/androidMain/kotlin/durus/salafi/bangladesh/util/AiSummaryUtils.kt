@@ -174,10 +174,10 @@ object AiSummaryUtils {
                                 }
                             }
                         } else {
-                            val cleanErrorMsg = if (isHtml || !response.isSuccessful) {
-                                "সারসংক্ষেপ সার্ভারে সমস্যা হয়েছে (HTTP ${response.code})। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
-                            } else {
-                                "সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"
+                            val cleanErrorMsg = when {
+                                response.code == 402 -> "এআই সার্ভারের ব্যবহারের কোটা/লিমিট শেষ হয়ে গেছে (HTTP 402)। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+                                isHtml || !response.isSuccessful -> "সারসংক্ষেপ সার্ভারে সমস্যা হয়েছে (HTTP ${response.code})। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+                                else -> "সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"
                             }
                             lastError = Exception(cleanErrorMsg)
                         }
