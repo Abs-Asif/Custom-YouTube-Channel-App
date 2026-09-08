@@ -15,6 +15,26 @@ import java.util.concurrent.TimeUnit
 
 object AiSummaryUtils {
 
+    private val MASK_BYTES = intArrayOf(
+        55, 30, 95, 26, 1, 126, 23, 93, 76, 86, 91, 113, 116, 127, 1, 31,
+        2, 86, 1, 3, 114, 65, 20, 71, 69, 102, 7, 95, 86, 87, 8, 35, 37,
+        115, 93, 72, 10, 83, 87, 13, 38, 68, 16, 67, 69, 106, 81, 95, 5, 85,
+        91, 117, 117, 114, 83, 75, 10, 83, 84, 12, 118, 22, 70, 69, 66, 55,
+        83, 85, 85, 82, 13, 114, 32
+    )
+
+    private const val SECRET = "DurusSalafiBDKey2025"
+
+    private fun getDecryptedApiKey(): String {
+        val sb = StringBuilder()
+        for (i in MASK_BYTES.indices) {
+            val secretChar = SECRET[i % SECRET.length].code
+            val decryptedChar = (MASK_BYTES[i] xor secretChar).toChar()
+            sb.append(decryptedChar)
+        }
+        return sb.toString()
+    }
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -125,70 +145,64 @@ object AiSummaryUtils {
             val prompt = "অনুগ্রহ করে নিচের বাংলা ভিডিও ক্যাপশনটি থেকে প্রধান গুরুত্বপূর্ণ পয়েন্টগুলো সংক্ষেপে ও সহজ ভাষায় বুলেট পয়েন্ট আকারে বাংলায় সারসংক্ষেপ (Summary) তৈরি করে দাও:\n\n$truncatedText"
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
-            val endpoints = listOf(
-                "https://text.pollinations.ai/openai/chat/completions",
-                "https://text.pollinations.ai/openai"
-            )
-            val models = listOf("openai", "openai-fast")
+            val apiKey = getDecryptedApiKey()
 
-            var lastError: Exception? = null
-
-            for (model in models) {
-                val jsonBody = JSONObject().apply {
-                    put("model", model)
-                    val messagesArray = JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("role", "user")
-                            put("content", prompt)
-                        })
-                    }
-                    put("messages", messagesArray)
+            val jsonBody = JSONObject().apply {
+                put("model", "google/gemma-4-31b-it:free")
+                val messagesArray = JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", prompt)
+                    })
                 }
-
-                val body = jsonBody.toString().toRequestBody(mediaType)
-
-                for (endpoint in endpoints) {
-                    try {
-                        val request = Request.Builder()
-                            .url(endpoint)
-                            .post(body)
-                            .addHeader("Content-Type", "application/json")
-                            .build()
-
-                        val response = client.newCall(request).execute()
-                        val responseStr = response.body?.string() ?: ""
-
-                        val trimmedResponse = responseStr.trim()
-                        val isHtml = trimmedResponse.startsWith("<html", ignoreCase = true) ||
-                                trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true)
-
-                        if (response.isSuccessful && !isHtml && responseStr.isNotBlank()) {
-                            val json = JSONObject(responseStr)
-                            val choices = json.optJSONArray("choices")
-                            if (choices != null && choices.length() > 0) {
-                                val firstChoice = choices.getJSONObject(0)
-                                val messageObj = firstChoice.optJSONObject("message")
-                                val content = messageObj?.optString("content")
-                                if (!content.isNullOrBlank()) {
-                                    return@withContext Result.success(content.trim())
-                                }
-                            }
-                        } else {
-                            val cleanErrorMsg = when {
-                                response.code == 402 -> "এআই সার্ভারের ব্যবহারের কোটা/লিমিট শেষ হয়ে গেছে (HTTP 402)। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
-                                isHtml || !response.isSuccessful -> "সারসংক্ষেপ সার্ভারে সমস্যা হয়েছে (HTTP ${response.code})। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
-                                else -> "সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"
-                            }
-                            lastError = Exception(cleanErrorMsg)
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        lastError = e
-                    }
-                }
+                put("messages", messagesArray)
             }
 
-            Result.failure(lastError ?: Exception("সারসংক্ষেপ তৈরি করার সময় কোনো সাড়া পাওয়া যায়নি।"))
+            val body = jsonBody.toString().toRequestBody(mediaType)
+
+            try {
+                val request = Request.Builder()
+                    .url("https://openrouter.ai/api/v1/chat/completions")
+                    .post(body)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("HTTP-Referer", "https://github.com/durus-salafi/bangladesh")
+                    .addHeader("X-Title", "Durūs App")
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val responseStr = response.body?.string() ?: ""
+
+                val trimmedResponse = responseStr.trim()
+                val isHtml = trimmedResponse.startsWith("<html", ignoreCase = true) ||
+                        trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true)
+
+                if (response.isSuccessful && !isHtml && responseStr.isNotBlank()) {
+                    val json = JSONObject(responseStr)
+                    val choices = json.optJSONArray("choices")
+                    if (choices != null && choices.length() > 0) {
+                        val firstChoice = choices.getJSONObject(0)
+                        val messageObj = firstChoice.optJSONObject("message")
+                        val content = messageObj?.optString("content")
+                        if (!content.isNullOrBlank()) {
+                            return@withContext Result.success(content.trim())
+                        }
+                    }
+                    Result.failure(Exception("সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"))
+                } else {
+                    val cleanErrorMsg = when {
+                        response.code == 401 -> "এআই সার্ভারের অথেনটিকেশন ব্যর্থ হয়েছে (HTTP 401)। API key সঠিক নয়।"
+                        response.code == 402 -> "এআই সার্ভারের ব্যবহারের কোটা/লিমিট শেষ হয়ে গেছে (HTTP 402)। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+                        response.code == 429 -> "অনেক অনুরোধ পাঠানো হয়েছে (HTTP 429)। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।"
+                        isHtml || !response.isSuccessful -> "সারসংক্ষেপ সার্ভারে সমস্যা হয়েছে (HTTP ${response.code})। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+                        else -> "সারসংক্ষেপ প্রতিক্রিয়া সঠিক নয়।"
+                    }
+                    Result.failure(Exception(cleanErrorMsg))
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Result.failure(e)
+            }
         }
     }
 }
