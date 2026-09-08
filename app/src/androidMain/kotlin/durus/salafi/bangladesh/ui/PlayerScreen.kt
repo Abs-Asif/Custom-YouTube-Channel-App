@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.foundation.rememberScrollState
 import durus.salafi.bangladesh.util.AiSummaryUtils
+import durus.salafi.bangladesh.util.AiSummaryStep
 import kotlinx.coroutines.launch
 import android.content.Context
 import android.content.ClipboardManager
@@ -104,6 +105,7 @@ fun PlayerScreen(
     // AI Summary state
     var showAiSummarySheet by remember { mutableStateOf(false) }
     var isAiSummaryLoading by remember { mutableStateOf(false) }
+    var aiSummaryStep by remember { mutableStateOf<AiSummaryStep?>(null) }
     var aiSummaryResult by remember { mutableStateOf<String?>(null) }
     var aiSummaryError by remember { mutableStateOf<String?>(null) }
     var summaryVideoUrl by remember { mutableStateOf<String?>(null) }
@@ -116,6 +118,7 @@ fun PlayerScreen(
         }
         summaryVideoUrl = currentVideoUrl
         isAiSummaryLoading = true
+        aiSummaryStep = AiSummaryStep.FETCHING_TRANSCRIPT
         aiSummaryResult = null
         aiSummaryError = null
 
@@ -127,6 +130,7 @@ fun PlayerScreen(
                 return@launch
             }
 
+            aiSummaryStep = AiSummaryStep.CLEANING_TRANSCRIPT
             val cleanedText = AiSummaryUtils.fetchAndCleanSubtitle(subStream)
             if (cleanedText.isBlank()) {
                 isAiSummaryLoading = false
@@ -134,7 +138,9 @@ fun PlayerScreen(
                 return@launch
             }
 
-            val res = AiSummaryUtils.generateAiSummary(cleanedText)
+            val res = AiSummaryUtils.generateAiSummary(cleanedText) { step ->
+                aiSummaryStep = step
+            }
             isAiSummaryLoading = false
             res.onSuccess { summary ->
                 aiSummaryResult = summary
@@ -845,11 +851,19 @@ fun PlayerScreen(
                                                     CircularProgressIndicator()
                                                     Spacer(Modifier.height(16.dp))
                                                     Text(
-                                                        "বাংলা ক্যাপশন সংগ্রহ ও এআই সারসংক্ষেপ তৈরি হচ্ছে...",
+                                                        aiSummaryStep?.description ?: "বাংলা ক্যাপশন সংগ্রহ ও এআই সারসংক্ষেপ তৈরি হচ্ছে...",
                                                         style = MaterialTheme.typography.bodyMedium,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                                     )
+                                                    if (aiSummaryStep != null) {
+                                                        Spacer(Modifier.height(8.dp))
+                                                        Text(
+                                                            "ধাপ ${aiSummaryStep!!.stepNumber}/4",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            color = MaterialTheme.colorScheme.primary
+                                                        )
+                                                    }
                                                 }
                                             } else if (aiSummaryError != null) {
                                                 Column(

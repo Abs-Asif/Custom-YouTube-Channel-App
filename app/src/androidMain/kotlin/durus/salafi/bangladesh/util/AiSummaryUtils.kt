@@ -13,6 +13,13 @@ import org.schabi.newpipe.extractor.stream.StreamExtractor
 import org.schabi.newpipe.extractor.stream.SubtitlesStream
 import java.util.concurrent.TimeUnit
 
+enum class AiSummaryStep(val stepNumber: Int, val description: String) {
+    FETCHING_TRANSCRIPT(1, "ভিডিও ট্রান্সক্রিপ্ট লোড করা হচ্ছে..."),
+    CLEANING_TRANSCRIPT(2, "ক্যাপশন পরিশোধিত ও সাজানো হচ্ছে..."),
+    SENDING_REQUEST(3, "এআই সার্ভারে অনুরোধ পাঠানো হচ্ছে..."),
+    PROCESSING_RESPONSE(4, "এআই প্রতিক্রিয়া সুবিন্যস্ত করা হচ্ছে...")
+}
+
 object AiSummaryUtils {
 
     private val MASK_BYTES = intArrayOf(
@@ -115,7 +122,7 @@ object AiSummaryUtils {
 
         // Clean lines and remove empty lines
         val lines = text.lines()
-            .map { it.trim() }
+            .map { it.replace(Regex("\\s+"), " ").trim() }
             .filter { it.isNotBlank() }
 
         // Deduplicate consecutive identical lines
@@ -129,10 +136,17 @@ object AiSummaryUtils {
         return deduplicated.joinToString(" ").replace(Regex("\\s+"), " ").trim()
     }
 
-    suspend fun generateAiSummary(cleanedCaptionText: String): Result<String> {
+    suspend fun generateAiSummary(
+        cleanedCaptionText: String,
+        onStepUpdate: ((AiSummaryStep) -> Unit)? = null
+    ): Result<String> {
         return withContext(Dispatchers.IO) {
             if (cleanedCaptionText.isBlank()) {
                 return@withContext Result.failure(Exception("সারসংক্ষেপ তৈরি করার জন্য কোনো ক্যাপশন লেখা পাওয়া যায়নি।"))
+            }
+
+            withContext(Dispatchers.Main) {
+                onStepUpdate?.invoke(AiSummaryStep.SENDING_REQUEST)
             }
 
             // Limit input size to prevent payload issues if text is ultra massive (~60,000 chars)
@@ -167,10 +181,15 @@ object AiSummaryUtils {
                     .addHeader("Content-Type", "application/json")
                     .addHeader("Authorization", "Bearer $apiKey")
                     .addHeader("HTTP-Referer", "https://github.com/durus-salafi/bangladesh")
-                    .addHeader("X-Title", "Durūs App")
+                    .addHeader("X-Title", "Durus App")
                     .build()
 
                 val response = client.newCall(request).execute()
+
+                withContext(Dispatchers.Main) {
+                    onStepUpdate?.invoke(AiSummaryStep.PROCESSING_RESPONSE)
+                }
+
                 val responseStr = response.body?.string() ?: ""
 
                 val trimmedResponse = responseStr.trim()
