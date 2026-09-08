@@ -162,7 +162,7 @@ object AiSummaryUtils {
             val apiKey = getDecryptedApiKey()
 
             val jsonBody = JSONObject().apply {
-                put("model", "google/gemma-4-31b-it:free")
+                put("model", "inclusionai/ling-3.0-flash-sante:free")
                 val messagesArray = JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "user")
