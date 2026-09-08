@@ -34,6 +34,10 @@ kotlin {
             implementation("io.insert-koin:koin-core:3.5.3")
             implementation("io.insert-koin:koin-compose:1.1.2")
         }
+
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
         
         androidMain.dependencies {
             implementation("androidx.core:core-ktx:1.12.0")
